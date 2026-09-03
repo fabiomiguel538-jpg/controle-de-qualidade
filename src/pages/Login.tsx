@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuthStore } from '../store/authStore';
-import { Factory, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import VivaLogo from '../components/VivaLogo';
 
 export default function Login() {
   const login = useAuthStore((state) => state.login);
@@ -61,21 +62,8 @@ export default function Login() {
     <div className="flex items-center justify-center min-h-screen p-4 bg-neutral-900">
       <div className="w-full max-w-md p-8 bg-white rounded-2xl shadow-xl">
         <div className="flex flex-col items-center mb-8">
-          <div className="mb-6 w-48 h-20 relative flex items-center justify-center">
-            {/* O usuário deve fazer upload do arquivo como logo.png na pasta public */}
-            <img 
-              src="/logo.png" 
-              alt="VIVA Cerâmica" 
-              className="max-w-full max-h-full object-contain"
-              onError={(e) => {
-                // Fallback icon se a imagem ainda não tiver sido enviada
-                e.currentTarget.style.display = 'none';
-                e.currentTarget.nextElementSibling?.classList.remove('hidden');
-              }}
-            />
-            <div className="hidden p-4 bg-orange-100 rounded-full text-orange-600">
-              <Factory size={48} />
-            </div>
+          <div className="mb-4 w-full flex items-center justify-center">
+            <VivaLogo className="h-16 w-auto" variant="dark" />
           </div>
           <h1 className="text-2xl font-bold text-center text-neutral-800">
             Controle de Defeitos Visuais

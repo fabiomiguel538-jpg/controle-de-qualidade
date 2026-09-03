@@ -1,0 +1,24 @@
+<svg viewBox="0 0 420 110" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Orange brush stroke -->
+  <path d="M 68 88 C 52 74, 42 54, 52 38 C 62 22, 92 12, 118 6 C 134 3, 150 2, 164 12 C 142 16, 118 25, 96 38 C 80 48, 70 62, 68 88 Z" fill="#EA580C" />
+  <path d="M 125 18 C 138 12, 156 8, 172 16 C 158 18, 142 21, 130 24 Z" fill="#F97316" />
+  <path d="M 45 68 C 42 60, 44 50, 48 42 C 48 48, 46 58, 46 66 Z" fill="#EA580C" />
+
+  <!-- Black brush stroke -->
+  <path d="M 62 90 C 74 86, 92 78, 114 68 C 134 58, 154 50, 175 42 C 188 38, 194 40, 186 46 C 172 54, 150 64, 130 74 C 106 84, 84 94, 62 90 Z" fill="#171717" />
+  <path d="M 94 76 C 118 68, 148 56, 178 50 C 162 56, 138 66, 110 77 Z" fill="#262626" />
+  <path d="M 160 48 C 172 44, 186 42, 196 40 C 188 43, 176 46, 166 49 Z" fill="#171717" />
+  <path d="M 80 84 C 70 86, 56 93, 62 90 C 72 85, 84 81, 98 78 Z" fill="#171717" />
+
+  <!-- VIVA -->
+  <g fill="#EA580C">
+    <path d="M 194 42 L 206 78 H 216 L 228 42 H 218 L 211 67 L 204 42 Z" stroke="#EA580C" stroke-width="3.5" stroke-linejoin="round" fill="#EA580C" />
+    <rect x="237" y="42" width="9" height="36" rx="2" />
+    <path d="M 255 42 L 267 78 H 277 L 289 42 H 279 L 272 67 L 265 42 Z" stroke="#EA580C" stroke-width="3.5" stroke-linejoin="round" fill="#EA580C" />
+    <path d="M 307 42 L 295 78 H 304 L 307 68 H 318 L 321 78 H 330 L 318 42 H 307 Z M 310 59 L 312.5 50 L 315 59 H 310 Z" stroke="#EA580C" stroke-width="3" stroke-linejoin="round" fill="#EA580C" />
+  </g>
+
+  <!-- Cerâmica -->
+  <text x="264" y="93" text-anchor="middle" fill="#262626" font-family="Georgia, serif" font-size="17" font-weight="600" letter-spacing="1.2">Cerâmica</text>
+  <text x="264" y="105" text-anchor="middle" fill="#525252" font-family="Georgia, serif" font-style="italic" font-size="8.5" letter-spacing="0.8">Impossível não admirar</text>
+</svg>

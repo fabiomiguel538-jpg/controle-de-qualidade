@@ -6,19 +6,23 @@ export const generatePDF = (report: Report) => {
   const doc = new jsPDF();
   
   // Title
-  doc.setFontSize(18);
-  doc.text('CONTROLE ESTATÍSTICO DE DEFEITOS VISUAIS', 105, 15, { align: 'center' });
+  doc.setFontSize(13);
+  doc.setTextColor(234, 88, 12);
+  doc.text('VIVA CERÂMICA', 105, 12, { align: 'center' });
+  doc.setTextColor(40, 40, 40);
+  doc.setFontSize(15);
+  doc.text('CONTROLE ESTATÍSTICO DE DEFEITOS VISUAIS', 105, 19, { align: 'center' });
   
   // Header Info
   doc.setFontSize(10);
-  doc.text(`Data: ${report.date}`, 14, 25);
-  doc.text(`Turno: ${report.shift}`, 60, 25);
-  doc.text(`Linha: ${report.line}`, 100, 25);
-  doc.text(`Formato: ${report.format}`, 14, 32);
-  doc.text(`Referência: ${report.reference}`, 100, 32);
+  doc.text(`Data: ${report.date}`, 14, 28);
+  doc.text(`Turno: ${report.shift}`, 60, 28);
+  doc.text(`Linha: ${report.line}`, 100, 28);
+  doc.text(`Formato: ${report.format}`, 14, 35);
+  doc.text(`Referência: ${report.reference}`, 100, 35);
 
   // Espessura
-  let nextY = 42;
+  let nextY = 45;
   if (report.thickness.length > 0) {
     doc.text('1. CONTROLE DE ESPESSURA', 14, nextY);
     autoTable(doc, {

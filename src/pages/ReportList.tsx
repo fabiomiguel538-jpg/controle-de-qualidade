@@ -5,6 +5,8 @@ import { useAuthStore } from '../store/authStore';
 import { ChevronLeft, Search, FileText, CheckCircle, Clock, FileDown, BarChart2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { generatePDF } from '../lib/pdfGenerator';
+import VivaLogo from '../components/VivaLogo';
+import VivaLogo from '../components/VivaLogo';
 
 export default function ReportList() {
   const [searchParams] = useSearchParams();
@@ -64,14 +66,7 @@ export default function ReportList() {
         <h1 className="text-xl font-bold flex-1">
           {isAdmin ? 'Relatórios Finalizados' : 'Histórico de Relatórios'}
         </h1>
-        <img 
-          src="/logo.png" 
-          alt="VIVA" 
-          className="h-8 object-contain ml-2"
-          onError={(e) => {
-            e.currentTarget.style.display = 'none';
-          }}
-        />
+        <VivaLogo className="h-7 w-auto ml-2" variant="dark" />
       </header>
 
       <div className="p-4">

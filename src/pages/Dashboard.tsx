@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { useReportStore } from '../store/reportStore';
 import { FileText, Plus, FolderOpen, CheckCircle, BarChart3, LogOut } from 'lucide-react';
+import VivaLogo from '../components/VivaLogo';
 
 export default function Dashboard() {
   const { user, logout } = useAuthStore();
@@ -22,14 +23,9 @@ export default function Dashboard() {
       <header className="px-6 py-8 bg-neutral-900 text-white shadow-md">
         <div className="flex justify-between items-center mb-6">
           <div className="flex items-center gap-3">
-            <img 
-              src="/logo.png" 
-              alt="VIVA" 
-              className="h-10 bg-white px-2 py-1 rounded object-contain"
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-              }}
-            />
+            <div className="bg-white px-2.5 py-1 rounded-lg flex items-center shadow-sm">
+              <VivaLogo className="h-8 w-auto" variant="dark" />
+            </div>
             <h1 className="text-xl font-bold">Painel de Produção</h1>
           </div>
           <button onClick={logout} className="p-2 bg-neutral-800 rounded-full hover:bg-black transition-colors">
