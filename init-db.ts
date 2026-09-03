@@ -103,6 +103,7 @@ export async function initDatabase() {
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
         report_id UUID REFERENCES reports(id) ON DELETE CASCADE,
         measurement_time VARCHAR(20),
+        measurement_time VARCHAR(20),
         cv VARCHAR(20),
         l1 NUMERIC,
         l2 NUMERIC,
@@ -117,6 +118,7 @@ export async function initDatabase() {
       CREATE TABLE IF NOT EXISTS warp_measurements (
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
         report_id UUID REFERENCES reports(id) ON DELETE CASCADE,
+        measurement_time VARCHAR(20),
         measurement_time VARCHAR(20),
         pc1 NUMERIC,
         pc2 NUMERIC,
@@ -135,6 +137,7 @@ export async function initDatabase() {
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
         report_id UUID REFERENCES reports(id) ON DELETE CASCADE,
         measurement_time VARCHAR(20),
+        measurement_time VARCHAR(20),
         pc1 NUMERIC,
         pc2 NUMERIC,
         pc3 NUMERIC,
@@ -151,6 +154,7 @@ export async function initDatabase() {
       CREATE TABLE IF NOT EXISTS lateral_curvature_measurements (
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
         report_id UUID REFERENCES reports(id) ON DELETE CASCADE,
+        measurement_time VARCHAR(20),
         measurement_time VARCHAR(20),
         pc1 NUMERIC,
         pc2 NUMERIC,
@@ -180,6 +184,7 @@ export async function initDatabase() {
       CREATE TABLE IF NOT EXISTS report_defects (
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
         report_id UUID REFERENCES reports(id) ON DELETE CASCADE,
+        measurement_time VARCHAR(20),
         defect_id INTEGER REFERENCES defects(id),
         defect_time VARCHAR(20),
         quantity INTEGER DEFAULT 1,
@@ -193,6 +198,7 @@ export async function initDatabase() {
       CREATE TABLE IF NOT EXISTS report_observations (
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
         report_id UUID REFERENCES reports(id) ON DELETE CASCADE,
+        measurement_time VARCHAR(20),
         observation_time VARCHAR(20),
         description TEXT,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -204,6 +210,7 @@ export async function initDatabase() {
       CREATE TABLE IF NOT EXISTS report_changes (
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
         report_id UUID REFERENCES reports(id) ON DELETE CASCADE,
+        measurement_time VARCHAR(20),
         change_time VARCHAR(20),
         initial_value VARCHAR(100),
         final_value VARCHAR(100),
@@ -223,11 +230,32 @@ export async function initDatabase() {
         pressao NUMERIC,
         caixa NUMERIC,
         peso_cx NUMERIC,
-        taratura NUMERIC,
-        corte NUMERIC,
-        lascamento NUMERIC,
+        taratura VARCHAR(20),
+        corte VARCHAR(20),
+        lascamento VARCHAR(20),
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Ensure they are varchar in case the table already exists as numeric
+    try {
+      await client.query(`ALTER TABLE process_information ALTER COLUMN taratura TYPE VARCHAR(20) USING taratura::varchar;`);
+      await client.query(`ALTER TABLE process_information ALTER COLUMN corte TYPE VARCHAR(20) USING corte::varchar;`);
+      await client.query(`ALTER TABLE process_information ALTER COLUMN lascamento TYPE VARCHAR(20) USING lascamento::varchar;`);
+    } catch (e) {
+      // Ignora erro se não for possível alterar (ex: já é varchar ou tabela recém-criada no dev)
+    }
+
+    // 12. box_weights
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS box_weights (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        report_id UUID REFERENCES reports(id) ON DELETE CASCADE,
+        measurement_time VARCHAR(20),
+        measurement_time VARCHAR(20),
+        weight NUMERIC,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
@@ -241,15 +269,27 @@ export async function initDatabase() {
       }
     }
 
-    // Create an Admin user if users table is empty
-    const { rows: userRows } = await client.query('SELECT count(*) FROM users');
-    if (parseInt(userRows[0].count) === 0) {
-      console.log('Seeding initial admin and lider user...');
-      const adminHash = await bcrypt.hash('admin123', 10);
-      await client.query(`INSERT INTO users (name, email, password_hash, role) VALUES ($1, $2, $3, $4)`, ['Administrador', 'admin@ceramica.com', adminHash, 'ADMIN']);
-      
-      const liderHash = await bcrypt.hash('lider123', 10);
-      await client.query(`INSERT INTO users (name, email, password_hash, role) VALUES ($1, $2, $3, $4)`, ['Líder Turno A', 'lider@ceramica.com', liderHash, 'LIDER']);
+    // Ensure all required users exist (no matter the current count)
+    console.log('Checking and seeding users...');
+    const usersToSeed = [
+      { name: 'Administrador', email: 'admin', pass: '741741', role: 'ADMIN' },
+      { name: 'Líder Matriz 1', email: 'lidermatriz1', pass: 'lider1', role: 'LIDER' },
+      { name: 'Líder Matriz 2', email: 'lidermatriz2', pass: 'lider2', role: 'LIDER' },
+      { name: 'Líder Matriz 3', email: 'lidermatriz3', pass: 'lider3', role: 'LIDER' },
+      { name: 'Líder Matriz 4', email: 'lidermatriz4', pass: 'lider4', role: 'LIDER' },
+      { name: 'Líder Turno A', email: 'lider@ceramica.com', pass: 'lider123', role: 'LIDER' }
+    ];
+
+    for (const u of usersToSeed) {
+      const { rows } = await client.query('SELECT id FROM users WHERE email = $1', [u.email]);
+      if (rows.length === 0) {
+        const hash = await bcrypt.hash(u.pass, 10);
+        await client.query(
+          `INSERT INTO users (name, email, password_hash, role) VALUES ($1, $2, $3, $4)`,
+          [u.name, u.email, hash, u.role]
+        );
+        console.log(`User seeded: ${u.email}`);
+      }
     }
 
     await client.query('COMMIT');

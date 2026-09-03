@@ -1,26 +1,60 @@
 import { useState } from 'react';
 import { useAuthStore } from '../store/authStore';
-import { Factory } from 'lucide-react';
+import { Factory, Loader2 } from 'lucide-react';
 
 export default function Login() {
   const login = useAuthStore((state) => state.login);
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (email === 'admin@ceramica.com' || email === 'lider@ceramica.com') {
-      login({
-        id: '1',
-        name: email === 'admin@ceramica.com' ? 'Administrador' : 'Líder Turno A',
-        email,
-        role: email === 'admin@ceramica.com' ? 'ADMIN' : 'LIDER',
-        token: 'mock-jwt-token'
+    setLoading(true);
+    setError('');
+
+    const mockUsers: Record<string, any> = {
+      'admin': { name: 'Administrador', pass: '741741', role: 'ADMIN' },
+      'lidermatriz1': { name: 'Líder Matriz 1', pass: 'lider1', role: 'LIDER' },
+      'lidermatriz2': { name: 'Líder Matriz 2', pass: 'lider2', role: 'LIDER' },
+      'lidermatriz3': { name: 'Líder Matriz 3', pass: 'lider3', role: 'LIDER' },
+      'lidermatriz4': { name: 'Líder Matriz 4', pass: 'lider4', role: 'LIDER' }
+    };
+
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
       });
-    } else {
-      setError('Credenciais inválidas. Tente admin@ceramica.com ou lider@ceramica.com');
+
+      if (res.ok) {
+        const data = await res.json();
+        login(data);
+        setLoading(false);
+        return;
+      }
+      
+      // se der erro (ex: 401 ou 503), forçamos o catch para tentar o mock fallback
+      throw new Error('Fallback to mock');
+    } catch (e) {
+      // Mock fallback if backend is unavailable, not configured, or if DB doesn't have the user yet
+      const user = mockUsers[username];
+      if (user && user.pass === password) {
+        login({
+          id: username,
+          name: user.name,
+          email: username,
+          role: user.role,
+          token: 'mock-jwt-token'
+        });
+      } else {
+        setError('Credenciais inválidas. Verifique usuário e senha.');
+      }
     }
+    
+    setLoading(false);
   };
 
   return (
@@ -44,13 +78,13 @@ export default function Login() {
           )}
           
           <div>
-            <label className="block mb-2 text-sm font-medium text-neutral-700">Email</label>
+            <label className="block mb-2 text-sm font-medium text-neutral-700">Usuário</label>
             <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
               className="w-full p-4 border border-neutral-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-lg"
-              placeholder="Digite seu email"
+              placeholder="Digite seu usuário"
               required
             />
           </div>
@@ -69,9 +103,11 @@ export default function Login() {
 
           <button
             type="submit"
-            className="w-full py-4 font-semibold text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors text-lg"
+            disabled={loading}
+            className="w-full flex items-center justify-center py-4 font-semibold text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors text-lg disabled:opacity-70"
           >
-            Entrar
+            {loading ? <Loader2 className="animate-spin mr-2" /> : null}
+            {loading ? 'Entrando...' : 'Entrar'}
           </button>
         </form>
       </div>

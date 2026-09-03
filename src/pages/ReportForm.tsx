@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useReportStore, Report } from '../store/reportStore';
 import { useAuthStore } from '../store/authStore';
-import { ChevronLeft, Plus, Trash2, CheckCircle, Save, FileDown, ArrowRight } from 'lucide-react';
+import { ChevronLeft, Plus, Trash2, CheckCircle, Save, FileDown, ArrowRight, Clock } from 'lucide-react';
 import { DEFECTS_LIST } from '../lib/constants';
 import { generatePDF } from '../lib/pdfGenerator';
 import clsx from 'clsx';
@@ -13,7 +13,7 @@ export default function ReportForm() {
   const { user } = useAuthStore();
   const { reports, createNewReport, updateCurrentReport, setCurrentReport, currentReportId, finalizeReport } = useReportStore();
   
-  const [activeTab, setActiveTab] = useState<'info' | 'thickness' | 'warp' | 'defects' | 'obs' | 'summary'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'thickness' | 'warp' | 'process' | 'weights' | 'defects' | 'obs' | 'summary'>('info');
 
   useEffect(() => {
     if (id) {
@@ -48,7 +48,9 @@ export default function ReportForm() {
   const TABS = [
     { id: 'info', label: 'Identificação' },
     { id: 'thickness', label: 'Espessura' },
-    { id: 'warp', label: 'Empeno' },
+    { id: 'warp', label: 'Empeno / Curvatura' },
+    { id: 'process', label: 'Processo' },
+    { id: 'weights', label: 'Pesagem da Caixa' },
     { id: 'defects', label: 'Defeitos' },
     { id: 'obs', label: 'Observações' },
     { id: 'summary', label: 'Resumo & PDF' }
@@ -277,14 +279,120 @@ export default function ReportForm() {
         {/* TAB 3: WARP & CURVATURE */}
         {activeTab === 'warp' && (
           <div className="space-y-6 max-w-lg mx-auto">
+            {[
+              { key: 'warp', title: 'Empeno (E)' },
+              { key: 'centralCurvature', title: 'Curvatura Central (CC)' },
+              { key: 'lateralCurvature', title: 'Curvatura Lateral (CL)' },
+            ].map(({ key, title }) => (
+              <div key={key} className="bg-white p-6 rounded-2xl shadow-sm border border-neutral-100">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-lg font-bold text-neutral-800">{title}</h2>
+                  {!isFinalized && (
+                    <button 
+                      onClick={() => {
+                        const now = new Date().toTimeString().substring(0, 5);
+                        update({ [key]: [...(report as any)[key], { time: now, pc1: 0, pc2: 0, pc3: 0, pc4: 0, pc5: 0, pc6: 0, pc7: 0 }] });
+                      }}
+                      className="flex items-center text-sm font-semibold text-blue-600 bg-blue-50 px-3 py-2 rounded-lg"
+                    >
+                      <Plus size={16} className="mr-1" /> Adicionar
+                    </button>
+                  )}
+                </div>
+
+                {(report as any)[key].length === 0 ? (
+                  <p className="text-neutral-500 text-center py-6 bg-neutral-50 rounded-xl border border-dashed border-neutral-200">Nenhuma medição registrada.</p>
+                ) : (
+                  <div className="space-y-6">
+                    {(report as any)[key].map((item: any, index: number) => (
+                      <div key={index} className="p-4 border border-neutral-200 rounded-xl bg-neutral-50 overflow-x-auto">
+                        <div className="flex justify-between items-center mb-4 min-w-[300px]">
+                          <input 
+                            type="time" 
+                            value={item.time}
+                            onChange={(e) => {
+                              const newList = [...(report as any)[key]];
+                              newList[index].time = e.target.value;
+                              update({ [key]: newList });
+                            }}
+                            disabled={isFinalized}
+                            className="p-2 border rounded-lg bg-white"
+                          />
+                          {!isFinalized && (
+                            <button 
+                              onClick={() => {
+                                const newList = [...(report as any)[key]];
+                                newList.splice(index, 1);
+                                update({ [key]: newList });
+                              }}
+                              className="text-red-500 p-2"
+                            >
+                              <Trash2 size={20} />
+                            </button>
+                          )}
+                        </div>
+                        
+                        <div className="space-y-4">
+                          {['pc1', 'pc2', 'pc3', 'pc4', 'pc5', 'pc6', 'pc7'].map((col, pcIdx) => (
+                            <div key={col} className="bg-white p-3 rounded-lg border border-neutral-200 shadow-sm">
+                              <div className="flex justify-between items-center mb-2">
+                                <span className="text-sm font-bold text-neutral-700">Peça {pcIdx + 1}</span>
+                                <span className="text-xs font-bold text-blue-800 bg-blue-100 px-2 py-1 rounded">
+                                  Maior: {item[col] || 0}
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-4 gap-2">
+                                {[0, 1, 2, 3].map(sideIdx => (
+                                  <div key={sideIdx}>
+                                    <label className="block text-center text-[10px] text-neutral-500 mb-1">L{sideIdx + 1}</label>
+                                    <input
+                                      type="number"
+                                      step="0.1"
+                                      value={item[`${col}_s`]?.[sideIdx] ?? ''}
+                                      onChange={(e) => {
+                                        const newList = [...(report as any)[key]];
+                                        const sides = [...(newList[index][`${col}_s`] || [0,0,0,0])];
+                                        sides[sideIdx] = parseFloat(e.target.value) || 0;
+                                        newList[index][`${col}_s`] = sides;
+                                        newList[index][col] = Math.max(...sides.map(v => v || 0));
+                                        update({ [key]: newList });
+                                      }}
+                                      disabled={isFinalized}
+                                      className="w-full p-2 text-center text-sm border border-neutral-300 rounded bg-neutral-50"
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        
+                        <div className="mt-4 pt-4 border-t border-neutral-200 flex justify-between items-center">
+                          <span className="text-sm font-bold text-neutral-700">MAIOR DA HORA:</span>
+                          <span className="text-lg font-black text-neutral-900 bg-neutral-200 px-3 py-1 rounded">
+                            {Math.max(item.pc1 || 0, item.pc2 || 0, item.pc3 || 0, item.pc4 || 0, item.pc5 || 0, item.pc6 || 0, item.pc7 || 0)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* TAB: PROCESSO */}
+        {activeTab === 'process' && (
+          <div className="space-y-6 max-w-lg mx-auto">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-neutral-100">
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-bold text-neutral-800">Empeno (E)</h2>
+                <h2 className="text-lg font-bold text-neutral-800">Controle de Processo</h2>
                 {!isFinalized && (
                   <button 
                     onClick={() => {
                       const now = new Date().toTimeString().substring(0, 5);
-                      update({ warp: [...report.warp, { time: now, pc1: 0, pc2: 0, pc3: 0, pc4: 0, pc5: 0, pc6: 0, pc7: 0 }] });
+                      update({ processChecks: [...(report.processChecks || []), { time: now, taratura: '-', corte: '-', lascamento: '-' }] });
                     }}
                     className="flex items-center text-sm font-semibold text-blue-600 bg-blue-50 px-3 py-2 rounded-lg"
                   >
@@ -293,30 +401,33 @@ export default function ReportForm() {
                 )}
               </div>
 
-              {report.warp.length === 0 ? (
-                <p className="text-neutral-500 text-center py-6 bg-neutral-50 rounded-xl border border-dashed border-neutral-200">Nenhuma medição registrada.</p>
+              {(!report.processChecks || report.processChecks.length === 0) ? (
+                <p className="text-neutral-500 text-center py-6 bg-neutral-50 rounded-xl border border-dashed border-neutral-200">Nenhum controle registrado.</p>
               ) : (
-                <div className="space-y-6">
-                  {report.warp.map((item, index) => (
-                    <div key={index} className="p-4 border border-neutral-200 rounded-xl bg-neutral-50 overflow-x-auto">
-                      <div className="flex justify-between items-center mb-4 min-w-[300px]">
-                        <input 
-                          type="time" 
-                          value={item.time}
-                          onChange={(e) => {
-                            const newWarp = [...report.warp];
-                            newWarp[index].time = e.target.value;
-                            update({ warp: newWarp });
-                          }}
-                          disabled={isFinalized}
-                          className="p-2 border rounded-lg bg-white"
-                        />
+                <div className="space-y-4">
+                  {report.processChecks.map((item, index) => (
+                    <div key={index} className="p-4 border border-neutral-200 rounded-xl bg-neutral-50">
+                      <div className="flex justify-between items-center mb-4">
+                        <div className="flex items-center gap-2">
+                          <label className="text-sm font-semibold text-neutral-500">Hora</label>
+                          <input 
+                            type="time" 
+                            value={item.time}
+                            onChange={(e) => {
+                              const newList = [...report.processChecks];
+                              newList[index].time = e.target.value;
+                              update({ processChecks: newList });
+                            }}
+                            disabled={isFinalized}
+                            className="p-2 border rounded-lg bg-white"
+                          />
+                        </div>
                         {!isFinalized && (
                           <button 
                             onClick={() => {
-                              const newWarp = [...report.warp];
-                              newWarp.splice(index, 1);
-                              update({ warp: newWarp });
+                              const newList = [...report.processChecks];
+                              newList.splice(index, 1);
+                              update({ processChecks: newList });
                             }}
                             className="text-red-500 p-2"
                           >
@@ -325,25 +436,121 @@ export default function ReportForm() {
                         )}
                       </div>
                       
-                      <div className="grid grid-cols-7 gap-1 min-w-[300px]">
-                        {['pc1', 'pc2', 'pc3', 'pc4', 'pc5', 'pc6', 'pc7'].map((col) => (
-                          <div key={col}>
-                            <label className="block text-center text-[10px] font-semibold text-neutral-500 mb-1">{col.toUpperCase()}</label>
-                            <input 
-                              type="number" 
-                              step="0.1"
-                              value={(item as any)[col]}
-                              onChange={(e) => {
-                                const newWarp = [...report.warp];
-                                (newWarp[index] as any)[col] = parseFloat(e.target.value) || 0;
-                                update({ warp: newWarp });
-                              }}
-                              disabled={isFinalized}
-                              className="w-full p-1 text-center text-sm border border-neutral-300 rounded bg-white"
-                            />
+                      <div className="space-y-4">
+                        {(['taratura', 'corte', 'lascamento'] as const).map(field => (
+                          <div key={field}>
+                            <label className="block text-xs font-semibold text-neutral-700 mb-1 capitalize">{field}</label>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => {
+                                  const newList = [...report.processChecks];
+                                  newList[index][field] = 'OK';
+                                  update({ processChecks: newList });
+                                }}
+                                disabled={isFinalized}
+                                className={clsx(
+                                  "flex-1 py-2 rounded-lg text-sm font-bold transition-colors",
+                                  item[field] === 'OK' 
+                                    ? "bg-green-500 text-white shadow-md" 
+                                    : "bg-neutral-200 text-neutral-600 hover:bg-neutral-300"
+                                )}
+                              >
+                                OK
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const newList = [...report.processChecks];
+                                  newList[index][field] = 'Ruim';
+                                  update({ processChecks: newList });
+                                }}
+                                disabled={isFinalized}
+                                className={clsx(
+                                  "flex-1 py-2 rounded-lg text-sm font-bold transition-colors",
+                                  item[field] === 'Ruim' 
+                                    ? "bg-red-500 text-white shadow-md" 
+                                    : "bg-neutral-200 text-neutral-600 hover:bg-neutral-300"
+                                )}
+                              >
+                                RUIM
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* TAB: PESAGEM DA CAIXA */}
+        {activeTab === 'weights' && (
+          <div className="space-y-6 max-w-lg mx-auto">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-neutral-100">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-lg font-bold text-neutral-800">Pesagem da Caixa</h2>
+                {!isFinalized && (
+                  <button 
+                    onClick={() => {
+                      const now = new Date().toTimeString().substring(0, 5);
+                      update({ boxWeights: [...(report.boxWeights || []), { time: now, weight: 0 }] });
+                    }}
+                    className="flex items-center text-sm font-semibold text-blue-600 bg-blue-50 px-3 py-2 rounded-lg"
+                  >
+                    <Plus size={16} className="mr-1" /> Adicionar
+                  </button>
+                )}
+              </div>
+
+              {(!report.boxWeights || report.boxWeights.length === 0) ? (
+                <p className="text-neutral-500 text-center py-6 bg-neutral-50 rounded-xl border border-dashed border-neutral-200">Nenhuma pesagem registrada.</p>
+              ) : (
+                <div className="space-y-4">
+                  {report.boxWeights.map((item, index) => (
+                    <div key={index} className="flex gap-4 p-4 border border-neutral-200 rounded-xl bg-neutral-50 items-center">
+                      <div className="flex-1">
+                        <label className="block text-xs font-semibold text-neutral-500 mb-1">Hora</label>
+                        <input 
+                          type="time" 
+                          value={item.time}
+                          onChange={(e) => {
+                            const newList = [...report.boxWeights];
+                            newList[index].time = e.target.value;
+                            update({ boxWeights: newList });
+                          }}
+                          disabled={isFinalized}
+                          className="w-full p-2 border rounded-lg bg-white"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <label className="block text-xs font-semibold text-neutral-500 mb-1">Peso (kg)</label>
+                        <input 
+                          type="number" 
+                          step="0.01"
+                          value={item.weight || ''}
+                          onChange={(e) => {
+                            const newList = [...report.boxWeights];
+                            newList[index].weight = parseFloat(e.target.value) || 0;
+                            update({ boxWeights: newList });
+                          }}
+                          disabled={isFinalized}
+                          className="w-full p-2 border rounded-lg bg-white"
+                        />
+                      </div>
+                      {!isFinalized && (
+                        <button 
+                          onClick={() => {
+                            const newList = [...report.boxWeights];
+                            newList.splice(index, 1);
+                            update({ boxWeights: newList });
+                          }}
+                          className="text-red-500 p-2 mt-4"
+                        >
+                          <Trash2 size={20} />
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
