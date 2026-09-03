@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useReportStore } from '../store/reportStore';
 import { useAuthStore } from '../store/authStore';
-import { ChevronLeft, Search, FileText, CheckCircle, Clock, FileDown, BarChart2 } from 'lucide-react';
+import { ChevronLeft, Search, FileText, CheckCircle, Clock, FileDown, BarChart2, Edit3 } from 'lucide-react';
 import { format } from 'date-fns';
 import { generatePDF } from '../lib/pdfGenerator';
 import VivaLogo from '../components/VivaLogo';
@@ -175,18 +175,26 @@ export default function ReportList() {
                   </div>
                 </Link>
                 
-                {report.status === 'FINALIZADO' && (
+                <div className="flex gap-2 mt-4 pt-3 border-t border-neutral-100">
+                  <Link
+                    to={`/reports/edit/${report.id}?edit=true`}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 bg-neutral-900 hover:bg-black text-white font-bold text-xs rounded-xl shadow-xs transition-all active:scale-95"
+                  >
+                    <Edit3 size={15} className="text-orange-400" />
+                    <span>Editar Relatório</span>
+                  </Link>
+
                   <button 
                     onClick={(e) => {
                       e.preventDefault();
                       generatePDF(report);
                     }}
-                    className="mt-4 w-full flex items-center justify-center gap-2 py-3 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-bold rounded-xl transition-colors"
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-bold text-xs rounded-xl transition-colors active:scale-95"
                   >
-                    <FileDown size={18} />
-                    Baixar PDF
+                    <FileDown size={15} />
+                    <span>{report.status === 'FINALIZADO' ? 'Baixar PDF' : 'Prévia PDF'}</span>
                   </button>
-                )}
+                </div>
               </div>
             ))
           )}

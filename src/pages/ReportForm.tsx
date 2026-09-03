@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useParams, Link } from 'react-router-dom';
+import { useNavigate, useParams, Link, useSearchParams } from 'react-router-dom';
 import { useReportStore, Report } from '../store/reportStore';
 import { useAuthStore } from '../store/authStore';
-import { ChevronLeft, Plus, Trash2, CheckCircle, Save, FileDown, ArrowRight, Clock, UploadCloud, Check, RefreshCw, Sparkles } from 'lucide-react';
+import { ChevronLeft, Plus, Trash2, CheckCircle, Save, FileDown, ArrowRight, Clock, UploadCloud, Check, RefreshCw, Sparkles, Pencil, Edit3, RotateCcw, AlertCircle } from 'lucide-react';
 import { DEFECTS_LIST, SHIFT_HOURS } from '../lib/constants';
 import { generatePDF } from '../lib/pdfGenerator';
 import clsx from 'clsx';
@@ -12,8 +12,9 @@ import TimeInput from '../components/TimeInput';
 export default function ReportForm() {
   const navigate = useNavigate();
   const { id } = useParams<{ id?: string }>();
+  const [searchParams] = useSearchParams();
   const { user } = useAuthStore();
-  const { reports, createNewReport, updateCurrentReport, setCurrentReport, currentReportId, finalizeReport, saveReportNow, isSyncing } = useReportStore();
+  const { reports, createNewReport, updateCurrentReport, setCurrentReport, currentReportId, finalizeReport, reopenReport, saveReportNow, isSyncing } = useReportStore();
   
   // Identifica se o usuário logado é o Líder Matriz 2 (ou admin para suporte)
   const isLiderMatriz2 = Boolean(
@@ -33,6 +34,7 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
   const [obsTime, setObsTime] = useState(new Date().toTimeString().substring(0, 5));
   const [defectEntries, setDefectEntries] = useState([{ id: '', amount: '', obs: '' }]);
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
+  const [isEditingFinalized, setIsEditingFinalized] = useState(searchParams.get('edit') === 'true');
 
   useEffect(() => {
     if (id) {
@@ -52,10 +54,29 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
   if (!report) return <div className="p-8 text-center">Carregando...</div>;
 
   const isFinalized = report.status === 'FINALIZADO';
+  const isLocked = isFinalized && !isEditingFinalized;
 
   const update = (updates: Partial<Report>) => {
-    if (isFinalized) return;
+    if (isLocked) return;
     updateCurrentReport(updates);
+  };
+
+  const handleSaveAndRegeneratePDF = async () => {
+    if (!report) return;
+    const success = await saveReportNow(report.id);
+    generatePDF(report);
+    setIsEditingFinalized(false);
+    setSyncFeedback(success ? 'Relatório salvo e PDF atualizado com sucesso!' : 'Salvo no aparelho e PDF atualizado!');
+    setTimeout(() => setSyncFeedback(null), 3500);
+  };
+
+  const handleReopenReport = async () => {
+    if (!report) return;
+    if (!confirm('Deseja reabrir este relatório? Ele voltará para o status "Em Andamento".')) return;
+    await reopenReport(report.id);
+    setIsEditingFinalized(true);
+    setSyncFeedback('Relatório reaberto! Agora está com status "Em Andamento".');
+    setTimeout(() => setSyncFeedback(null), 3500);
   };
 
   const handleSendToCloud = async () => {
@@ -290,7 +311,7 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-neutral-100">
         <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
           <h2 className="text-lg font-bold text-neutral-800">{title}</h2>
-          {!isFinalized && (
+          {!isLocked && (
             <div className="flex flex-wrap items-center gap-2">
               <button 
                 type="button"
@@ -338,7 +359,7 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
                         newList[index].time = newTime;
                         update({ [key]: newList });
                       }}
-                      disabled={isFinalized}
+                      disabled={isLocked}
                       shift={report.shift}
                       className="p-2 text-sm"
                       label={`Medição ${index + 1} - ${title}`}
@@ -346,7 +367,7 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {isLiderMatriz2 && !isFinalized && (
+                    {isLiderMatriz2 && !isLocked && (
                       <button 
                         type="button"
                         onClick={() => handleAutoFillPieces(key, index)}
@@ -358,7 +379,7 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
                       </button>
                     )}
 
-                    {!isFinalized && (
+                    {!isLocked && (
                       <button 
                         onClick={() => {
                           const newList = [...(report as any)[key]];
@@ -380,7 +401,7 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
                       <div className="flex justify-between items-center mb-2">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-bold text-neutral-700">Peça {pcIdx + 1}</span>
-                          {isLiderMatriz2 && !isFinalized && pcIdx === 0 && (
+                          {isLiderMatriz2 && !isLocked && pcIdx === 0 && (
                             <button
                               type="button"
                               onClick={() => handleAutoFillPieces(key, index)}
@@ -412,7 +433,7 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
                                 newList[index][col] = Math.max(...sides.map(v => v || 0));
                                 update({ [key]: newList });
                               }}
-                              disabled={isFinalized}
+                              disabled={isLocked}
                               className="w-full p-2 text-center text-sm border border-neutral-300 rounded bg-neutral-50"
                             />
                           </div>
@@ -445,15 +466,47 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
             <ChevronLeft size={22} />
           </Link>
           <div className="min-w-0">
-            <h1 className="text-lg font-bold text-neutral-800 truncate">
-              {isFinalized ? 'Relatório Finalizado' : 'Preencher Relatório'}
-            </h1>
-            <p className="text-xs text-neutral-500 truncate">Salvo no aparelho • Envio sob demanda</p>
+            <div className="flex items-center gap-2">
+              <h1 className="text-lg font-bold text-neutral-800 truncate">
+                {isFinalized ? (isEditingFinalized ? 'Editando Relatório' : 'Relatório Finalizado') : 'Preencher Relatório'}
+              </h1>
+              {isFinalized && (
+                <span className={clsx(
+                  "text-[10px] uppercase tracking-wider font-extrabold px-2 py-0.5 rounded-md",
+                  isEditingFinalized ? "bg-amber-100 text-amber-800 border border-amber-300" : "bg-neutral-900 text-white"
+                )}>
+                  {isEditingFinalized ? 'Modo Edição' : 'Finalizado'}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-neutral-500 truncate">
+              {isFinalized && isEditingFinalized 
+                ? 'Edição habilitada • As alterações serão salvas' 
+                : 'Salvo no aparelho • Envio sob demanda'}
+            </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
-          {!isFinalized && (
+          {/* Botão de alternar Edição em Relatório Finalizado */}
+          {isFinalized && (
+            <button
+              type="button"
+              onClick={() => setIsEditingFinalized(!isEditingFinalized)}
+              className={clsx(
+                "flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold shadow-sm active:scale-95 transition-all",
+                isEditingFinalized
+                  ? "bg-amber-500 hover:bg-amber-600 text-white border border-amber-600"
+                  : "bg-neutral-900 hover:bg-black text-white"
+              )}
+              title={isEditingFinalized ? "Clique para concluir ou pausar a edição" : "Clique para habilitar a edição deste relatório"}
+            >
+              <Pencil size={13} className={isEditingFinalized ? "text-amber-100" : "text-orange-400"} />
+              <span>{isEditingFinalized ? 'Concluir Edição' : 'Editar Relatório'}</span>
+            </button>
+          )}
+
+          {!isLocked && (
             <button
               onClick={handleSendToCloud}
               disabled={isSyncing}
@@ -493,6 +546,45 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
         </div>
       )}
 
+      {/* Banner informativo de modo de edição para relatório finalizado */}
+      {isFinalized && isEditingFinalized && (
+        <div className="bg-amber-500 text-white text-xs font-bold py-2.5 px-4 flex flex-wrap items-center justify-between gap-2 sticky top-[57px] z-20 shadow-md">
+          <div className="flex items-center gap-2">
+            <Pencil size={14} className="stroke-[2.5]" />
+            <span>Modo de Edição Ativo: você pode alterar dados, medições e defeitos.</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSaveAndRegeneratePDF}
+              className="bg-white text-amber-900 px-3 py-1 rounded-lg text-xs font-black hover:bg-amber-50 active:scale-95 transition-all shadow-xs"
+            >
+              Salvar e Atualizar PDF
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsEditingFinalized(false)}
+              className="bg-amber-700 hover:bg-amber-800 text-white px-2.5 py-1 rounded-lg text-xs font-semibold active:scale-95 transition-all"
+            >
+              Concluir
+            </button>
+          </div>
+        </div>
+      )}
+
+      {isFinalized && !isEditingFinalized && (
+        <div className="bg-neutral-800 text-neutral-200 text-xs font-medium py-2 px-4 flex items-center justify-between sticky top-[57px] z-20 shadow-sm">
+          <span>Relatório finalizado em modo somente leitura.</span>
+          <button
+            type="button"
+            onClick={() => setIsEditingFinalized(true)}
+            className="text-orange-400 hover:text-orange-300 font-bold underline flex items-center gap-1.5 active:scale-95"
+          >
+            <Pencil size={13} /> Habilitar Edição
+          </button>
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="bg-white border-b border-neutral-200 overflow-x-auto hide-scrollbar sticky top-[73px] z-10">
         <div className="flex px-2 py-2 w-max">
@@ -526,7 +618,7 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
                     type="date" 
                     value={report.date} 
                     onChange={e => update({ date: e.target.value })}
-                    disabled={isFinalized}
+                    disabled={isLocked}
                     className="w-full p-4 bg-neutral-50 border border-neutral-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none"
                   />
                 </div>
@@ -538,7 +630,7 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
                       <button
                         key={shift}
                         onClick={() => update({ shift })}
-                        disabled={isFinalized}
+                        disabled={isLocked}
                         className={clsx(
                           "flex-1 py-4 rounded-xl font-bold border transition-colors",
                           report.shift === shift ? "bg-neutral-900 text-white border-neutral-900" : "bg-white text-neutral-700 border-neutral-200"
@@ -553,7 +645,7 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
                       <span className="font-bold text-neutral-800">Horários Turno {report.shift}:</span>{' '}
                       {(SHIFT_HOURS[report.shift] || []).join(' • ')}
                     </div>
-                    {!isFinalized && (
+                    {!isLocked && (
                       <button
                         type="button"
                         onClick={() => handleDefineShiftHours(report.shift)}
@@ -573,7 +665,7 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
                     type="text" 
                     value={report.line} 
                     onChange={e => update({ line: e.target.value })}
-                    disabled={isFinalized}
+                    disabled={isLocked}
                     className="w-full p-4 bg-neutral-50 border border-neutral-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none"
                     placeholder="Ex: Linha 1"
                   />
@@ -585,7 +677,7 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
                     type="text" 
                     value={report.format} 
                     onChange={e => update({ format: e.target.value })}
-                    disabled={isFinalized}
+                    disabled={isLocked}
                     className="w-full p-4 bg-neutral-50 border border-neutral-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none"
                     placeholder="Ex: 60x60"
                   />
@@ -597,7 +689,7 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
                     type="text" 
                     value={report.reference} 
                     onChange={e => update({ reference: e.target.value })}
-                    disabled={isFinalized}
+                    disabled={isLocked}
                     className="w-full p-4 bg-neutral-50 border border-neutral-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none"
                     placeholder="Código do produto"
                   />
@@ -620,7 +712,7 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-neutral-100">
               <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
                 <h2 className="text-lg font-bold text-neutral-800">Controle de Espessura</h2>
-                {!isFinalized && (
+                {!isLocked && (
                   <div className="flex items-center gap-2">
                     <button 
                       type="button"
@@ -658,13 +750,13 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
                               newThick[index].time = newTime;
                               update({ thickness: newThick });
                             }}
-                            disabled={isFinalized}
+                            disabled={isLocked}
                             shift={report.shift}
                             className="p-2 text-sm"
                             label={`Medição ${index + 1} - Espessura`}
                           />
                         </div>
-                        {!isFinalized && (
+                        {!isLocked && (
                           <button 
                             onClick={() => {
                               const newThick = [...report.thickness];
@@ -689,7 +781,7 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
                                 newThick[index].cv = status;
                                 update({ thickness: newThick });
                               }}
-                              disabled={isFinalized}
+                              disabled={isLocked}
                               className={clsx(
                                 "flex-1 py-2 text-sm font-bold rounded-lg border",
                                 item.cv === status ? (status === 'R' ? 'bg-red-500 text-white border-red-500' : status === 'AR' ? 'bg-orange-500 text-white border-orange-500' : 'bg-neutral-900 text-white border-neutral-900') : 'bg-white text-neutral-600'
@@ -714,7 +806,7 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
                                 (newThick[index] as any)[col] = parseFloat(e.target.value) || 0;
                                 update({ thickness: newThick });
                               }}
-                              disabled={isFinalized}
+                              disabled={isLocked}
                               className="w-full p-2 text-center border border-neutral-300 rounded-lg bg-white"
                             />
                           </div>
@@ -743,7 +835,7 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-neutral-100">
               <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
                 <h2 className="text-lg font-bold text-neutral-800">Controle de Processo</h2>
-                {!isFinalized && (
+                {!isLocked && (
                   <div className="flex items-center gap-2">
                     <button 
                       type="button"
@@ -781,13 +873,13 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
                               newList[index].time = newTime;
                               update({ processChecks: newList });
                             }}
-                            disabled={isFinalized}
+                            disabled={isLocked}
                             shift={report.shift}
                             className="p-2 text-sm"
                             label={`Verificação ${index + 1} - Processo`}
                           />
                         </div>
-                        {!isFinalized && (
+                        {!isLocked && (
                           <button 
                             onClick={() => {
                               const newList = [...report.processChecks];
@@ -812,7 +904,7 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
                                   newList[index][field] = 'OK';
                                   update({ processChecks: newList });
                                 }}
-                                disabled={isFinalized}
+                                disabled={isLocked}
                                 className={clsx(
                                   "flex-1 py-2 rounded-lg text-sm font-bold transition-colors",
                                   item[field] === 'OK' 
@@ -828,7 +920,7 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
                                   newList[index][field] = 'Ruim';
                                   update({ processChecks: newList });
                                 }}
-                                disabled={isFinalized}
+                                disabled={isLocked}
                                 className={clsx(
                                   "flex-1 py-2 rounded-lg text-sm font-bold transition-colors",
                                   item[field] === 'Ruim' 
@@ -856,7 +948,7 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-neutral-100">
               <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
                 <h2 className="text-lg font-bold text-neutral-800">Pesagem da Caixa</h2>
-                {!isFinalized && (
+                {!isLocked && (
                   <div className="flex items-center gap-2">
                     <button 
                       type="button"
@@ -894,7 +986,7 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
                             newList[index].time = newTime;
                             update({ boxWeights: newList });
                           }}
-                          disabled={isFinalized}
+                          disabled={isLocked}
                           shift={report.shift}
                           className="w-full p-2 text-sm"
                           label={`Pesagem ${index + 1}`}
@@ -911,11 +1003,11 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
                             newList[index].weight = parseFloat(e.target.value) || 0;
                             update({ boxWeights: newList });
                           }}
-                          disabled={isFinalized}
+                          disabled={isLocked}
                           className="w-full p-2 border border-neutral-300 rounded-lg bg-white font-semibold text-neutral-800 outline-none focus:border-orange-500"
                         />
                       </div>
-                      {!isFinalized && (
+                      {!isLocked && (
                         <button 
                           onClick={() => {
                             const newList = [...report.boxWeights];
@@ -941,7 +1033,7 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-neutral-100">
               <h2 className="text-lg font-bold text-neutral-800 mb-4">Registro Rápido de Defeitos</h2>
               
-              {!isFinalized && (
+              {!isLocked && (
                 <div className="bg-neutral-50 p-4 rounded-xl border border-neutral-200 mb-6">
                   <div className="mb-4">
                     <label className="block text-sm font-semibold text-neutral-700 mb-1">Horário do Registro</label>
@@ -1111,7 +1203,7 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
                         {d.observation && <span className="ml-2">• {d.observation}</span>}
                       </div>
                     </div>
-                    {!isFinalized && (
+                    {!isLocked && (
                       <button onClick={() => {
                         const newDefects = [...report.defects];
                         newDefects.splice(i, 1);
@@ -1133,7 +1225,7 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-neutral-100">
               <h2 className="text-lg font-bold text-neutral-800 mb-4">Observações e Trocas</h2>
               
-              {!isFinalized && (
+              {!isLocked && (
                 <div className="bg-neutral-50 p-4 rounded-xl border border-neutral-200 mb-6">
                   <div className="mb-3">
                     <label className="block text-xs font-semibold text-neutral-600 mb-1">Horário da Ocorrência</label>
@@ -1172,7 +1264,7 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
                   <div key={i} className="p-4 border border-neutral-200 rounded-xl bg-white">
                     <div className="flex justify-between items-start mb-2">
                       <span className="text-sm font-bold text-neutral-500"><Clock size={14} className="inline mr-1" /> {o.time}</span>
-                      {!isFinalized && (
+                      {!isLocked && (
                         <button onClick={() => {
                           const newObs = [...report.observations];
                           newObs.splice(i, 1);
@@ -1198,6 +1290,14 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
               <h2 className="text-xl font-bold text-neutral-800 mb-6 text-center">Resumo do Relatório</h2>
               
               <div className="space-y-4 mb-8 text-neutral-700">
+                <div className="flex justify-between py-3 border-b border-neutral-100">
+                  <span className="font-semibold text-neutral-500">Status</span>
+                  <span className={clsx("font-bold px-2.5 py-0.5 rounded-full text-xs", 
+                    report.status === 'FINALIZADO' ? "bg-neutral-900 text-white" : "bg-orange-100 text-orange-800"
+                  )}>
+                    {report.status}
+                  </span>
+                </div>
                 <div className="flex justify-between py-3 border-b border-neutral-100">
                   <span className="font-semibold text-neutral-500">Data e Turno</span>
                   <span className="font-bold">{report.date} • Turno {report.shift}</span>
@@ -1244,12 +1344,62 @@ type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurva
                   </button>
                 </div>
               ) : (
-                <button 
-                  onClick={() => generatePDF(report)}
-                  className="w-full py-5 bg-neutral-900 text-white font-bold rounded-2xl flex justify-center items-center text-lg active:bg-black shadow-lg shadow-neutral-300"
-                >
-                  <FileDown size={24} className="mr-2" /> Baixar PDF Novamente
-                </button>
+                <div className="space-y-3">
+                  {isEditingFinalized ? (
+                    <>
+                      <button 
+                        onClick={handleSaveAndRegeneratePDF}
+                        className="w-full py-4 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-2xl flex justify-center items-center text-base active:scale-[0.98] transition-all shadow-md"
+                      >
+                        <Check size={20} className="mr-2 stroke-[3]" /> Salvar Alterações e Atualizar PDF
+                      </button>
+
+                      <button 
+                        onClick={() => setIsEditingFinalized(false)}
+                        className="w-full py-3.5 bg-neutral-800 hover:bg-neutral-900 text-white font-semibold rounded-2xl flex justify-center items-center text-sm active:scale-[0.98] transition-all"
+                      >
+                        Concluir Edição (Bloquear Alterações)
+                      </button>
+
+                      <button 
+                        onClick={handleReopenReport}
+                        className="w-full py-3.5 bg-white hover:bg-neutral-50 text-neutral-700 font-semibold border border-neutral-300 rounded-2xl flex justify-center items-center text-sm active:scale-[0.98] transition-all"
+                      >
+                        <RotateCcw size={16} className="mr-2 text-amber-600" /> Reabrir Relatório (Voltar para "Em Andamento")
+                      </button>
+
+                      <button 
+                        onClick={() => generatePDF(report)}
+                        className="w-full py-3.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 font-semibold rounded-2xl flex justify-center items-center text-sm active:scale-[0.98] transition-all"
+                      >
+                        <FileDown size={18} className="mr-2 text-neutral-600" /> Baixar PDF Atual
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button 
+                        onClick={() => setIsEditingFinalized(true)}
+                        className="w-full py-4 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-2xl flex justify-center items-center text-base active:scale-[0.98] transition-all shadow-md"
+                      >
+                        <Pencil size={20} className="mr-2" /> Editar Este Relatório
+                      </button>
+
+                      <button 
+                        onClick={handleReopenReport}
+                        className="w-full py-3.5 bg-white hover:bg-neutral-50 text-neutral-700 font-semibold border border-neutral-300 rounded-2xl flex justify-center items-center text-sm active:scale-[0.98] transition-all"
+                      >
+                        <RotateCcw size={16} className="mr-2 text-amber-600" /> Reabrir Relatório (Voltar para "Em Andamento")
+                      </button>
+
+                      <button 
+                        onClick={() => generatePDF(report)}
+                        className="w-full py-4 bg-neutral-900 text-white font-bold rounded-2xl flex justify-center items-center text-base active:bg-black shadow-md"
+                      >
+                        <FileDown size={20} className="mr-2" /> Baixar PDF Novamente
+                      </button>
+                    </>
+                  )}
+                </div>
               )}
             </div>
           </div>

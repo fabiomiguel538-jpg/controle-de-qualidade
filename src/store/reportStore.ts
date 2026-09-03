@@ -41,6 +41,7 @@ interface ReportState {
   createNewReport: (info: Partial<Report>) => string;
   updateCurrentReport: (updates: Partial<Report>) => void;
   finalizeReport: (id: string) => Promise<void>;
+  reopenReport: (id: string) => Promise<void>;
   markSynced: (id: string) => void;
   deleteReport: (id: string) => Promise<void>;
   fetchFromCloud: () => Promise<void>;
@@ -138,6 +139,17 @@ export const useReportStore = create<ReportState>()(
             r.id === id ? { ...r, status: 'FINALIZADO', syncStatus: 'pending' } : r
           ),
           currentReportId: state.currentReportId === id ? null : state.currentReportId
+        }));
+
+        await get().saveReportNow(id);
+      },
+
+      reopenReport: async (id) => {
+        set((state) => ({
+          reports: state.reports.map((r) =>
+            r.id === id ? { ...r, status: 'EM_ANDAMENTO', syncStatus: 'pending' } : r
+          ),
+          currentReportId: id,
         }));
 
         await get().saveReportNow(id);
