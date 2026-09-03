@@ -33,34 +33,38 @@ export default function Dashboard() {
 
       <main className="p-4 -mt-6">
         {/* Main Actions */}
-        <div className="grid grid-cols-1 gap-4 mb-8">
-          <Link
-            to="/reports/new"
-            className="flex items-center p-6 bg-white rounded-2xl shadow-sm border border-neutral-100 active:scale-95 transition-transform"
-          >
-            <div className="flex items-center justify-center w-14 h-14 bg-green-100 text-green-600 rounded-full mr-4">
-              <Plus size={32} />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-neutral-800">Novo Relatório</h2>
-              <p className="text-neutral-500 text-sm mt-1">Iniciar preenchimento do turno</p>
-            </div>
-          </Link>
-        </div>
+        {user?.role !== 'ADMIN' && (
+          <div className="grid grid-cols-1 gap-4 mb-8">
+            <Link
+              to="/reports/new"
+              className="flex items-center p-6 bg-white rounded-2xl shadow-sm border border-neutral-100 active:scale-95 transition-transform"
+            >
+              <div className="flex items-center justify-center w-14 h-14 bg-green-100 text-green-600 rounded-full mr-4">
+                <Plus size={32} />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-neutral-800">Novo Relatório</h2>
+                <p className="text-neutral-500 text-sm mt-1">Iniciar preenchimento do turno</p>
+              </div>
+            </Link>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-4 mb-8">
-          <Link
-            to="/reports/list?filter=em_andamento"
-            className="flex flex-col items-center p-4 bg-white rounded-2xl shadow-sm border border-neutral-100 active:scale-95 transition-transform"
-          >
-            <FolderOpen size={32} className="text-orange-500 mb-2" />
-            <h3 className="font-semibold text-neutral-800">Em Andamento</h3>
-            <span className="text-2xl font-bold mt-1">{savedReports.length}</span>
-          </Link>
+          {user?.role !== 'ADMIN' && (
+            <Link
+              to="/reports/list?filter=em_andamento"
+              className="flex flex-col items-center p-4 bg-white rounded-2xl shadow-sm border border-neutral-100 active:scale-95 transition-transform"
+            >
+              <FolderOpen size={32} className="text-orange-500 mb-2" />
+              <h3 className="font-semibold text-neutral-800">Em Andamento</h3>
+              <span className="text-2xl font-bold mt-1">{savedReports.length}</span>
+            </Link>
+          )}
 
           <Link
             to="/reports/list?filter=finalizado"
-            className="flex flex-col items-center p-4 bg-white rounded-2xl shadow-sm border border-neutral-100 active:scale-95 transition-transform"
+            className={`flex flex-col items-center p-4 bg-white rounded-2xl shadow-sm border border-neutral-100 active:scale-95 transition-transform ${user?.role === 'ADMIN' ? 'col-span-2' : ''}`}
           >
             <CheckCircle size={32} className="text-blue-500 mb-2" />
             <h3 className="font-semibold text-neutral-800">Finalizados</h3>

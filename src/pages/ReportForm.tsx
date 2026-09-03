@@ -14,11 +14,17 @@ export default function ReportForm() {
   const { reports, createNewReport, updateCurrentReport, setCurrentReport, currentReportId, finalizeReport } = useReportStore();
   
   const [activeTab, setActiveTab] = useState<'info' | 'thickness' | 'warp' | 'process' | 'weights' | 'defects' | 'obs' | 'summary'>('info');
+  const [defectTime, setDefectTime] = useState(new Date().toTimeString().substring(0, 5));
+  const [defectEntries, setDefectEntries] = useState([{ id: '', amount: '', obs: '' }]);
 
   useEffect(() => {
     if (id) {
       setCurrentReport(id);
     } else {
+      if (user?.role === 'ADMIN') {
+        navigate('/', { replace: true });
+        return;
+      }
       const newId = createNewReport({ leaderName: user?.name });
       navigate(`/reports/edit/${newId}`, { replace: true });
     }
@@ -112,7 +118,7 @@ export default function ReportForm() {
                 <div>
                   <label className="block text-sm font-semibold text-neutral-700 mb-1">Turno *</label>
                   <div className="flex gap-2">
-                    {['A', 'B', 'C'].map(shift => (
+                    {['A', 'B', 'C', 'D'].map(shift => (
                       <button
                         key={shift}
                         onClick={() => update({ shift })}
@@ -567,66 +573,154 @@ export default function ReportForm() {
               
               {!isFinalized && (
                 <div className="bg-neutral-50 p-4 rounded-xl border border-neutral-200 mb-6">
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-semibold text-neutral-700 mb-1">Defeito</label>
-                      <select 
-                        id="defect-select"
-                        className="w-full p-4 bg-white border border-neutral-300 rounded-xl outline-none"
-                      >
-                        <option value="">Selecione um defeito...</option>
-                        {DEFECTS_LIST.map(d => (
-                          <option key={d.code} value={d.code}>{d.code} - {d.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-semibold text-neutral-700 mb-1">Quantidade</label>
-                        <input id="defect-qtd" type="number" defaultValue="1" className="w-full p-4 bg-white border border-neutral-300 rounded-xl" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-semibold text-neutral-700 mb-1">Horário</label>
-                        <input id="defect-time" type="time" defaultValue={new Date().toTimeString().substring(0, 5)} className="w-full p-4 bg-white border border-neutral-300 rounded-xl" />
-                      </div>
-                    </div>
+                  <div className="mb-4">
+                    <label className="block text-sm font-semibold text-neutral-700 mb-1">Horário do Registro</label>
+                    <input 
+                      type="time" 
+                      value={defectTime}
+                      onChange={(e) => setDefectTime(e.target.value)}
+                      className="w-full p-4 bg-white border border-neutral-300 rounded-xl font-bold text-lg" 
+                    />
+                  </div>
 
-                    <div>
-                      <label className="block text-sm font-semibold text-neutral-700 mb-1">Observação (Opcional)</label>
-                      <input id="defect-obs" type="text" className="w-full p-4 bg-white border border-neutral-300 rounded-xl" placeholder="Detalhes..." />
-                    </div>
+                  <div className="space-y-4">
+                    {defectEntries.map((entry, index) => (
+                      <div key={index} className="p-4 bg-white border border-neutral-300 rounded-xl relative shadow-sm">
+                        {defectEntries.length > 1 && (
+                          <button 
+                            onClick={() => {
+                              const newEntries = [...defectEntries];
+                              newEntries.splice(index, 1);
+                              setDefectEntries(newEntries);
+                            }}
+                            className="absolute -top-3 -right-3 bg-red-100 text-red-600 p-2 rounded-full shadow-sm hover:bg-red-200"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-sm font-semibold text-neutral-700 mb-1">Defeito</label>
+                            <select 
+                              value={entry.id}
+                              onChange={(e) => {
+                                const newEntries = [...defectEntries];
+                                newEntries[index].id = e.target.value;
+                                setDefectEntries(newEntries);
+                              }}
+                              className="w-full p-3 bg-neutral-50 border border-neutral-200 rounded-lg outline-none"
+                            >
+                              <option value="">Selecione...</option>
+                              {DEFECTS_LIST.map(d => (
+                                <option key={d.code} value={d.code}>{d.code} - {d.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-sm font-semibold text-neutral-700 mb-1">
+                                Leitura Atual
+                              </label>
+                              <input 
+                                type="number" 
+                                value={entry.amount}
+                                onChange={(e) => {
+                                  const newEntries = [...defectEntries];
+                                  newEntries[index].amount = e.target.value;
+                                  setDefectEntries(newEntries);
+                                }}
+                                placeholder="Total Ex: 150"
+                                className="w-full p-3 bg-neutral-50 border border-neutral-200 rounded-lg" 
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-semibold text-neutral-700 mb-1">Observação</label>
+                              <input 
+                                type="text" 
+                                value={entry.obs}
+                                onChange={(e) => {
+                                  const newEntries = [...defectEntries];
+                                  newEntries[index].obs = e.target.value;
+                                  setDefectEntries(newEntries);
+                                }}
+                                className="w-full p-3 bg-neutral-50 border border-neutral-200 rounded-lg" 
+                                placeholder="Opcional" 
+                              />
+                            </div>
+                          </div>
+
+                          {entry.id && entry.amount && (() => {
+                            const defectId = parseInt(entry.id);
+                            const previousTotal = report.defects
+                              .filter(d => d.defectId === defectId)
+                              .reduce((sum, d) => sum + d.quantity, 0);
+                            const inputTotal = parseInt(entry.amount) || 0;
+                            const actualQuantity = inputTotal > previousTotal ? inputTotal - previousTotal : inputTotal;
+                            
+                            return (
+                              <div className="text-sm px-1 text-blue-700 mt-2">
+                                {previousTotal > 0 ? (
+                                  inputTotal > previousTotal ? (
+                                    <span>Cálculo: {inputTotal} - {previousTotal} = <strong>{actualQuantity} nesta hora</strong>.</span>
+                                  ) : (
+                                    <span className="text-orange-600">Aviso: Leitura menor que anterior. Será registrado <strong>{actualQuantity}</strong>.</span>
+                                  )
+                                ) : (
+                                  <span>Primeiro registro: <strong>{actualQuantity}</strong>.</span>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                    ))}
+                    
+                    <button 
+                      onClick={() => setDefectEntries([...defectEntries, { id: '', amount: '', obs: '' }])}
+                      className="w-full py-3 bg-neutral-200 text-neutral-700 font-bold rounded-xl flex justify-center items-center active:bg-neutral-300 transition-colors"
+                    >
+                      <Plus size={18} className="mr-2" /> Adicionar Outro Defeito
+                    </button>
 
                     <button 
                       onClick={() => {
-                        const sel = document.getElementById('defect-select') as HTMLSelectElement;
-                        const qtd = document.getElementById('defect-qtd') as HTMLInputElement;
-                        const time = document.getElementById('defect-time') as HTMLInputElement;
-                        const obs = document.getElementById('defect-obs') as HTMLInputElement;
+                        const newDefects = [...report.defects];
+                        let added = false;
                         
-                        if (!sel.value) return;
-                        
-                        const defectId = parseInt(sel.value);
-                        const defectDef = DEFECTS_LIST.find(d => d.code === defectId);
-                        
-                        update({
-                          defects: [...report.defects, {
-                            defectId,
-                            name: defectDef?.name || '',
-                            quantity: parseInt(qtd.value) || 1,
-                            time: time.value,
-                            observation: obs.value
-                          }]
+                        defectEntries.forEach(entry => {
+                          if (!entry.id || !entry.amount) return;
+                          
+                          const defectId = parseInt(entry.id);
+                          const defectDef = DEFECTS_LIST.find(d => d.code === defectId);
+                          
+                          const previousTotal = report.defects
+                            .filter(d => d.defectId === defectId)
+                            .reduce((sum, d) => sum + d.quantity, 0);
+                            
+                          const inputTotal = parseInt(entry.amount) || 0;
+                          const actualQuantity = inputTotal > previousTotal ? inputTotal - previousTotal : inputTotal;
+                          
+                          if (actualQuantity > 0) {
+                            newDefects.push({
+                              defectId,
+                              name: defectDef?.name || '',
+                              quantity: actualQuantity,
+                              time: defectTime,
+                              observation: entry.obs
+                            });
+                            added = true;
+                          }
                         });
                         
-                        // Reset
-                        sel.value = '';
-                        qtd.value = '1';
-                        obs.value = '';
+                        if (added) {
+                          update({ defects: newDefects });
+                          setDefectEntries([{ id: '', amount: '', obs: '' }]);
+                        }
                       }}
-                      className="w-full py-4 bg-green-600 text-white font-bold rounded-xl flex justify-center items-center active:bg-green-700"
+                      className="w-full py-4 mt-4 bg-green-600 text-white font-bold rounded-xl flex justify-center items-center active:bg-green-700 shadow-md transition-colors"
                     >
-                      <Plus size={20} className="mr-2" /> Registrar Defeito
+                      <CheckCircle size={20} className="mr-2" /> Registrar Todos
                     </button>
                   </div>
                 </div>
