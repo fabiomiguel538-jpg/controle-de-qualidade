@@ -86,7 +86,7 @@ export default function ReportForm() {
               onClick={() => setActiveTab(tab.id)}
               className={clsx(
                 "px-5 py-3 rounded-full text-sm font-semibold mx-1 whitespace-nowrap transition-colors",
-                activeTab === tab.id ? "bg-blue-600 text-white shadow-md" : "bg-neutral-100 text-neutral-600 border border-transparent hover:border-neutral-300"
+                activeTab === tab.id ? "bg-neutral-900 text-white shadow-md" : "bg-neutral-100 text-neutral-600 border border-transparent hover:border-neutral-300"
               )}
             >
               {tab.label}
@@ -111,7 +111,7 @@ export default function ReportForm() {
                     value={report.date} 
                     onChange={e => update({ date: e.target.value })}
                     disabled={isFinalized}
-                    className="w-full p-4 bg-neutral-50 border border-neutral-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    className="w-full p-4 bg-neutral-50 border border-neutral-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none"
                   />
                 </div>
 
@@ -125,7 +125,7 @@ export default function ReportForm() {
                         disabled={isFinalized}
                         className={clsx(
                           "flex-1 py-4 rounded-xl font-bold border transition-colors",
-                          report.shift === shift ? "bg-blue-600 text-white border-blue-600" : "bg-white text-neutral-700 border-neutral-200"
+                          report.shift === shift ? "bg-neutral-900 text-white border-neutral-900" : "bg-white text-neutral-700 border-neutral-200"
                         )}
                       >
                         {shift}
@@ -141,7 +141,7 @@ export default function ReportForm() {
                     value={report.line} 
                     onChange={e => update({ line: e.target.value })}
                     disabled={isFinalized}
-                    className="w-full p-4 bg-neutral-50 border border-neutral-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    className="w-full p-4 bg-neutral-50 border border-neutral-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none"
                     placeholder="Ex: Linha 1"
                   />
                 </div>
@@ -153,7 +153,7 @@ export default function ReportForm() {
                     value={report.format} 
                     onChange={e => update({ format: e.target.value })}
                     disabled={isFinalized}
-                    className="w-full p-4 bg-neutral-50 border border-neutral-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    className="w-full p-4 bg-neutral-50 border border-neutral-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none"
                     placeholder="Ex: 60x60"
                   />
                 </div>
@@ -165,7 +165,7 @@ export default function ReportForm() {
                     value={report.reference} 
                     onChange={e => update({ reference: e.target.value })}
                     disabled={isFinalized}
-                    className="w-full p-4 bg-neutral-50 border border-neutral-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    className="w-full p-4 bg-neutral-50 border border-neutral-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none"
                     placeholder="Código do produto"
                   />
                 </div>
@@ -193,7 +193,7 @@ export default function ReportForm() {
                       const now = new Date().toTimeString().substring(0, 5);
                       update({ thickness: [...report.thickness, { time: now, cv: 'A', l1: 0, l2: 0, l3: 0, l4: 0 }] });
                     }}
-                    className="flex items-center text-sm font-semibold text-blue-600 bg-blue-50 px-3 py-2 rounded-lg"
+                    className="flex items-center text-sm font-semibold text-orange-600 bg-orange-50 px-3 py-2 rounded-lg"
                   >
                     <Plus size={16} className="mr-1" /> Adicionar
                   </button>
@@ -246,7 +246,7 @@ export default function ReportForm() {
                               disabled={isFinalized}
                               className={clsx(
                                 "flex-1 py-2 text-sm font-bold rounded-lg border",
-                                item.cv === status ? (status === 'R' ? 'bg-red-500 text-white border-red-500' : status === 'AR' ? 'bg-orange-500 text-white border-orange-500' : 'bg-green-500 text-white border-green-500') : 'bg-white text-neutral-600'
+                                item.cv === status ? (status === 'R' ? 'bg-red-500 text-white border-red-500' : status === 'AR' ? 'bg-orange-500 text-white border-orange-500' : 'bg-neutral-900 text-white border-neutral-900') : 'bg-white text-neutral-600'
                               )}
                             >
                               {status}
@@ -299,7 +299,7 @@ export default function ReportForm() {
                         const now = new Date().toTimeString().substring(0, 5);
                         update({ [key]: [...(report as any)[key], { time: now, pc1: 0, pc2: 0, pc3: 0, pc4: 0, pc5: 0, pc6: 0, pc7: 0 }] });
                       }}
-                      className="flex items-center text-sm font-semibold text-blue-600 bg-blue-50 px-3 py-2 rounded-lg"
+                      className="flex items-center text-sm font-semibold text-orange-600 bg-orange-50 px-3 py-2 rounded-lg"
                     >
                       <Plus size={16} className="mr-1" /> Adicionar
                     </button>
@@ -343,7 +343,7 @@ export default function ReportForm() {
                             <div key={col} className="bg-white p-3 rounded-lg border border-neutral-200 shadow-sm">
                               <div className="flex justify-between items-center mb-2">
                                 <span className="text-sm font-bold text-neutral-700">Peça {pcIdx + 1}</span>
-                                <span className="text-xs font-bold text-blue-800 bg-blue-100 px-2 py-1 rounded">
+                                <span className="text-xs font-bold text-orange-800 bg-orange-100 px-2 py-1 rounded">
                                   Maior: {item[col] || 0}
                                 </span>
                               </div>
@@ -400,7 +400,7 @@ export default function ReportForm() {
                       const now = new Date().toTimeString().substring(0, 5);
                       update({ processChecks: [...(report.processChecks || []), { time: now, taratura: '-', corte: '-', lascamento: '-' }] });
                     }}
-                    className="flex items-center text-sm font-semibold text-blue-600 bg-blue-50 px-3 py-2 rounded-lg"
+                    className="flex items-center text-sm font-semibold text-orange-600 bg-orange-50 px-3 py-2 rounded-lg"
                   >
                     <Plus size={16} className="mr-1" /> Adicionar
                   </button>
@@ -457,7 +457,7 @@ export default function ReportForm() {
                                 className={clsx(
                                   "flex-1 py-2 rounded-lg text-sm font-bold transition-colors",
                                   item[field] === 'OK' 
-                                    ? "bg-green-500 text-white shadow-md" 
+                                    ? "bg-neutral-900 text-white shadow-md" 
                                     : "bg-neutral-200 text-neutral-600 hover:bg-neutral-300"
                                 )}
                               >
@@ -503,7 +503,7 @@ export default function ReportForm() {
                       const now = new Date().toTimeString().substring(0, 5);
                       update({ boxWeights: [...(report.boxWeights || []), { time: now, weight: 0 }] });
                     }}
-                    className="flex items-center text-sm font-semibold text-blue-600 bg-blue-50 px-3 py-2 rounded-lg"
+                    className="flex items-center text-sm font-semibold text-orange-600 bg-orange-50 px-3 py-2 rounded-lg"
                   >
                     <Plus size={16} className="mr-1" /> Adicionar
                   </button>
@@ -659,7 +659,7 @@ export default function ReportForm() {
                             const actualQuantity = inputTotal > previousTotal ? inputTotal - previousTotal : inputTotal;
                             
                             return (
-                              <div className="text-sm px-1 text-blue-700 mt-2">
+                              <div className="text-sm px-1 text-orange-700 mt-2">
                                 {previousTotal > 0 ? (
                                   inputTotal > previousTotal ? (
                                     <span>Cálculo: {inputTotal} - {previousTotal} = <strong>{actualQuantity} nesta hora</strong>.</span>
@@ -718,7 +718,7 @@ export default function ReportForm() {
                           setDefectEntries([{ id: '', amount: '', obs: '' }]);
                         }
                       }}
-                      className="w-full py-4 mt-4 bg-green-600 text-white font-bold rounded-xl flex justify-center items-center active:bg-green-700 shadow-md transition-colors"
+                      className="w-full py-4 mt-4 bg-neutral-900 text-white font-bold rounded-xl flex justify-center items-center active:bg-black shadow-md transition-colors"
                     >
                       <CheckCircle size={20} className="mr-2" /> Registrar Todos
                     </button>
@@ -766,7 +766,7 @@ export default function ReportForm() {
                 <div className="bg-neutral-50 p-4 rounded-xl border border-neutral-200 mb-6">
                   <textarea
                     id="new-obs"
-                    className="w-full p-4 bg-white border border-neutral-300 rounded-xl mb-4 min-h-[120px] outline-none focus:border-blue-500"
+                    className="w-full p-4 bg-white border border-neutral-300 rounded-xl mb-4 min-h-[120px] outline-none focus:border-orange-500"
                     placeholder="Registre informações sobre o processo, ocorrências e problemas encontrados durante o turno..."
                   />
                   <button 
@@ -836,14 +836,14 @@ export default function ReportForm() {
               {!isFinalized ? (
                 <button 
                   onClick={handleFinalize}
-                  className="w-full py-5 bg-blue-600 text-white font-bold rounded-2xl flex justify-center items-center text-lg active:bg-blue-700 shadow-lg shadow-blue-200"
+                  className="w-full py-5 bg-orange-500 text-white font-bold rounded-2xl flex justify-center items-center text-lg active:bg-orange-600 shadow-lg shadow-orange-200"
                 >
                   <CheckCircle size={24} className="mr-2" /> Finalizar e Gerar PDF
                 </button>
               ) : (
                 <button 
                   onClick={() => generatePDF(report)}
-                  className="w-full py-5 bg-green-600 text-white font-bold rounded-2xl flex justify-center items-center text-lg active:bg-green-700 shadow-lg shadow-green-200"
+                  className="w-full py-5 bg-neutral-900 text-white font-bold rounded-2xl flex justify-center items-center text-lg active:bg-black shadow-lg shadow-neutral-300"
                 >
                   <FileDown size={24} className="mr-2" /> Baixar PDF Novamente
                 </button>

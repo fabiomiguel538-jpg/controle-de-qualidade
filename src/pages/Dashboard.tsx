@@ -19,14 +19,24 @@ export default function Dashboard() {
   return (
     <div className="pb-24">
       {/* Header */}
-      <header className="px-6 py-8 bg-blue-600 text-white shadow-md">
+      <header className="px-6 py-8 bg-neutral-900 text-white shadow-md">
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-xl font-bold">Painel de Produção</h1>
-          <button onClick={logout} className="p-2 bg-blue-700 rounded-full hover:bg-blue-800 transition-colors">
+          <div className="flex items-center gap-3">
+            <img 
+              src="/logo.png" 
+              alt="VIVA" 
+              className="h-10 bg-white px-2 py-1 rounded object-contain"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+            <h1 className="text-xl font-bold">Painel de Produção</h1>
+          </div>
+          <button onClick={logout} className="p-2 bg-neutral-800 rounded-full hover:bg-black transition-colors">
             <LogOut size={20} />
           </button>
         </div>
-        <p className="text-blue-100 text-sm">Bem-vindo(a),</p>
+        <p className="text-orange-500 text-sm">Bem-vindo(a),</p>
         <p className="text-2xl font-semibold">{user?.name}</p>
         <p className="text-sm mt-1">{user?.role === 'LIDER' ? 'Líder de Turno' : 'Administrador'}</p>
       </header>
@@ -39,7 +49,7 @@ export default function Dashboard() {
               to="/reports/new"
               className="flex items-center p-6 bg-white rounded-2xl shadow-sm border border-neutral-100 active:scale-95 transition-transform"
             >
-              <div className="flex items-center justify-center w-14 h-14 bg-green-100 text-green-600 rounded-full mr-4">
+              <div className="flex items-center justify-center w-14 h-14 bg-neutral-100 text-orange-600 rounded-full mr-4">
                 <Plus size={32} />
               </div>
               <div>
@@ -66,7 +76,7 @@ export default function Dashboard() {
             to="/reports/list?filter=finalizado"
             className={`flex flex-col items-center p-4 bg-white rounded-2xl shadow-sm border border-neutral-100 active:scale-95 transition-transform ${user?.role === 'ADMIN' ? 'col-span-2' : ''}`}
           >
-            <CheckCircle size={32} className="text-blue-500 mb-2" />
+            <CheckCircle size={32} className="text-neutral-900 mb-2" />
             <h3 className="font-semibold text-neutral-800">Finalizados</h3>
             <span className="text-2xl font-bold mt-1">{finishedReports.length}</span>
           </Link>
@@ -77,7 +87,7 @@ export default function Dashboard() {
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-neutral-100 space-y-4">
           <div className="flex items-center justify-between border-b border-neutral-100 pb-4">
             <div className="flex items-center text-neutral-600">
-              <FileText size={20} className="mr-3 text-blue-500" />
+              <FileText size={20} className="mr-3 text-neutral-900" />
               <span>Relatórios hoje</span>
             </div>
             <span className="font-bold text-xl">{todayReports.length}</span>

@@ -64,6 +64,14 @@ export default function ReportList() {
         <h1 className="text-xl font-bold flex-1">
           {isAdmin ? 'Relatórios Finalizados' : 'Histórico de Relatórios'}
         </h1>
+        <img 
+          src="/logo.png" 
+          alt="VIVA" 
+          className="h-8 object-contain ml-2"
+          onError={(e) => {
+            e.currentTarget.style.display = 'none';
+          }}
+        />
       </header>
 
       <div className="p-4">
@@ -76,7 +84,7 @@ export default function ReportList() {
               placeholder="Buscar por linha, formato, data..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-12 pr-4 py-4 rounded-xl border border-neutral-200 outline-none focus:border-blue-500 bg-white"
+              className="w-full pl-12 pr-4 py-4 rounded-xl border border-neutral-200 outline-none focus:border-orange-500 bg-white"
             />
           </div>
 
@@ -96,7 +104,7 @@ export default function ReportList() {
               </button>
               <button 
                 onClick={() => setFilter('finalizado')}
-                className={`px-4 py-2 rounded-full whitespace-nowrap ${filter === 'finalizado' ? 'bg-blue-600 text-white' : 'bg-white text-neutral-600 border border-neutral-200'}`}
+                className={`px-4 py-2 rounded-full whitespace-nowrap ${filter === 'finalizado' ? 'bg-neutral-900 text-white' : 'bg-white text-neutral-600 border border-neutral-200'}`}
               >
                 Finalizados
               </button>
@@ -108,7 +116,7 @@ export default function ReportList() {
         {isAdmin && (
           <div className="mb-6 bg-white p-4 rounded-2xl shadow-sm border border-neutral-200">
             <h2 className="flex items-center font-bold text-neutral-800 mb-4">
-              <BarChart2 size={18} className="mr-2 text-blue-600" />
+              <BarChart2 size={18} className="mr-2 text-orange-500" />
               Resumo Geral (Turnos)
             </h2>
             <div className="grid grid-cols-4 gap-2">
@@ -117,7 +125,7 @@ export default function ReportList() {
                   <div className="text-sm font-bold text-neutral-500 mb-1">Turno {shift}</div>
                   <div className="text-xl font-black text-neutral-800">{shiftSummary[shift as 'A'|'B'|'C'|'D'].reports}</div>
                   <div className="text-xs text-neutral-500 mt-1">relatórios</div>
-                  <div className="text-xs font-semibold text-red-500 mt-2 bg-red-50 py-1 rounded">
+                  <div className="text-xs font-semibold text-orange-600 mt-2 bg-orange-50 py-1 rounded">
                     {shiftSummary[shift as 'A'|'B'|'C'|'D'].defects} defeitos
                   </div>
                 </div>
@@ -146,7 +154,7 @@ export default function ReportList() {
                       <p className="text-sm text-neutral-500">Turno {report.shift} • Linha {report.line || '-'}</p>
                     </div>
                     {report.status === 'FINALIZADO' ? (
-                      <span className="flex items-center text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                      <span className="flex items-center text-xs font-semibold text-orange-500 bg-neutral-900 px-2 py-1 rounded">
                         <CheckCircle size={12} className="mr-1" /> Finalizado
                       </span>
                     ) : (

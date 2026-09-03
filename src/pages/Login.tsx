@@ -61,8 +61,21 @@ export default function Login() {
     <div className="flex items-center justify-center min-h-screen p-4 bg-neutral-900">
       <div className="w-full max-w-md p-8 bg-white rounded-2xl shadow-xl">
         <div className="flex flex-col items-center mb-8">
-          <div className="p-4 mb-4 bg-blue-100 rounded-full text-blue-600">
-            <Factory size={48} />
+          <div className="mb-6 w-48 h-20 relative flex items-center justify-center">
+            {/* O usuário deve fazer upload do arquivo como logo.png na pasta public */}
+            <img 
+              src="/logo.png" 
+              alt="VIVA Cerâmica" 
+              className="max-w-full max-h-full object-contain"
+              onError={(e) => {
+                // Fallback icon se a imagem ainda não tiver sido enviada
+                e.currentTarget.style.display = 'none';
+                e.currentTarget.nextElementSibling?.classList.remove('hidden');
+              }}
+            />
+            <div className="hidden p-4 bg-orange-100 rounded-full text-orange-600">
+              <Factory size={48} />
+            </div>
           </div>
           <h1 className="text-2xl font-bold text-center text-neutral-800">
             Controle de Defeitos Visuais
@@ -83,7 +96,7 @@ export default function Login() {
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full p-4 border border-neutral-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-lg"
+              className="w-full p-4 border border-neutral-300 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none text-lg"
               placeholder="Digite seu usuário"
               required
             />
@@ -95,7 +108,7 @@ export default function Login() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full p-4 border border-neutral-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-lg"
+              className="w-full p-4 border border-neutral-300 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none text-lg"
               placeholder="Digite sua senha"
               required
             />
@@ -104,7 +117,7 @@ export default function Login() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full flex items-center justify-center py-4 font-semibold text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors text-lg disabled:opacity-70"
+            className="w-full flex items-center justify-center py-4 font-semibold text-white bg-orange-500 rounded-xl hover:bg-orange-600 transition-colors text-lg disabled:opacity-70"
           >
             {loading ? <Loader2 className="animate-spin mr-2" /> : null}
             {loading ? 'Entrando...' : 'Entrar'}
