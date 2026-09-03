@@ -30,14 +30,15 @@ export default function Login() {
         body: JSON.stringify({ username, password })
       });
 
-      if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
         const data = await res.json();
         login(data);
         setLoading(false);
         return;
       }
       
-      // se der erro (ex: 401 ou 503), forçamos o catch para tentar o mock fallback
+      // se der erro (ex: 401, 503 ou retorno HTML da Netlify), forçamos o catch para tentar o mock fallback
       throw new Error('Fallback to mock');
     } catch (e) {
       // Mock fallback if backend is unavailable, not configured, or if DB doesn't have the user yet

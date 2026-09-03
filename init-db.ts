@@ -80,14 +80,14 @@ export async function initDatabase() {
     // 2. reports
     await client.query(`
       CREATE TABLE IF NOT EXISTS reports (
-        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-        report_date DATE NOT NULL,
-        shift VARCHAR(10) NOT NULL,
-        line VARCHAR(50),
+        id VARCHAR(255) PRIMARY KEY,
+        report_date DATE,
+        shift VARCHAR(20),
+        line VARCHAR(100),
         leader_id UUID REFERENCES users(id),
         leader_name VARCHAR(255),
-        format VARCHAR(50),
-        reference VARCHAR(100),
+        format VARCHAR(100),
+        reference VARCHAR(150),
         start_time VARCHAR(20),
         end_time VARCHAR(20),
         status VARCHAR(50) DEFAULT 'EM_ANDAMENTO',
@@ -102,6 +102,8 @@ export async function initDatabase() {
     await client.query(`
       ALTER TABLE reports ADD COLUMN IF NOT EXISTS leader_name VARCHAR(255);
       ALTER TABLE reports ADD COLUMN IF NOT EXISTS data JSONB;
+      ALTER TABLE reports ALTER COLUMN report_date DROP NOT NULL;
+      ALTER TABLE reports ALTER COLUMN shift DROP NOT NULL;
     `);
 
     // 3. thickness_measurements

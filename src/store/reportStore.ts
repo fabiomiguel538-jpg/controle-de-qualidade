@@ -2,6 +2,15 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import localforage from 'localforage';
 import { v4 as uuidv4 } from 'uuid';
+import {
+  fetchReportsCloud,
+  saveReportCloud,
+  batchSyncReportsCloud,
+  deleteReportCloud
+} from '../lib/cloudDb';
+import { Report, ReportStatus, Defect } from '../types';
+
+export type { Report, ReportStatus, Defect };
 
 localforage.config({
   name: 'CeramicaDefeitosApp',
@@ -20,49 +29,6 @@ const storage = {
     await localforage.removeItem(name);
   },
 };
-
-export type ReportStatus = 'EM_ANDAMENTO' | 'FINALIZADO';
-
-export interface Defect {
-  code: number;
-  name: string;
-}
-
-export interface Report {
-  id: string;
-  date: string;
-  shift: string;
-  line: string;
-  leaderName: string;
-  format: string;
-  reference: string;
-  status: ReportStatus;
-  
-  thickness: { time: string, cv: string, l1: number, l2: number, l3: number, l4: number }[];
-  warp: { time: string, pc1: number, pc1_s?: number[], pc2: number, pc2_s?: number[], pc3: number, pc3_s?: number[], pc4: number, pc4_s?: number[], pc5: number, pc5_s?: number[], pc6: number, pc6_s?: number[], pc7: number, pc7_s?: number[] }[];
-  centralCurvature: { time: string, pc1: number, pc1_s?: number[], pc2: number, pc2_s?: number[], pc3: number, pc3_s?: number[], pc4: number, pc4_s?: number[], pc5: number, pc5_s?: number[], pc6: number, pc6_s?: number[], pc7: number, pc7_s?: number[] }[];
-  lateralCurvature: { time: string, pc1: number, pc1_s?: number[], pc2: number, pc2_s?: number[], pc3: number, pc3_s?: number[], pc4: number, pc4_s?: number[], pc5: number, pc5_s?: number[], pc6: number, pc6_s?: number[], pc7: number, pc7_s?: number[] }[];
-  
-  boxWeights: { time: string, weight: number }[];
-  processChecks: { time: string, taratura: 'OK' | 'Ruim' | '-', corte: 'OK' | 'Ruim' | '-', lascamento: 'OK' | 'Ruim' | '-' }[];
-
-  defects: { defectId: number, name: string, time: string, quantity: number, observation?: string }[];
-  observations: { time: string, description: string }[];
-  changes: { time: string, initial: string, final: string, visual: string, observation: string }[];
-  
-  processInfo: {
-    gramatura?: number;
-    carga?: number;
-    pressao?: number;
-    caixa?: number;
-    peso_cx?: number;
-    taratura?: 'OK' | 'Ruim';
-    corte?: 'OK' | 'Ruim';
-    lascamento?: 'OK' | 'Ruim';
-  };
-
-  syncStatus: 'synced' | 'pending';
-}
 
 interface ReportState {
   reports: Report[];
@@ -161,24 +127,16 @@ export const useReportStore = create<ReportState>()(
 
         set({ isSyncing: true });
         try {
-          const res = await fetch('/api/reports', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(targetReport),
-          });
+          await saveReportCloud(targetReport);
 
-          if (res.ok) {
-            set((state) => ({
-              isSyncing: false,
-              cloudConnected: true,
-              lastSyncedAt: new Date().toLocaleTimeString(),
-              reports: state.reports.map((r) =>
-                r.id === targetId ? { ...r, syncStatus: 'synced' } : r
-              ),
-            }));
-          } else {
-            set({ isSyncing: false });
-          }
+          set((state) => ({
+            isSyncing: false,
+            cloudConnected: true,
+            lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            reports: state.reports.map((r) =>
+              r.id === targetId ? { ...r, syncStatus: 'synced' } : r
+            ),
+          }));
         } catch (e) {
           console.warn('Could not sync report to cloud (working offline):', e);
           set({ isSyncing: false, cloudConnected: false });
@@ -203,7 +161,7 @@ export const useReportStore = create<ReportState>()(
         }));
 
         try {
-          await fetch(`/api/reports/${id}`, { method: 'DELETE' });
+          await deleteReportCloud(id);
         } catch (e) {
           console.warn('Failed to delete report on cloud:', e);
         }
@@ -212,9 +170,7 @@ export const useReportStore = create<ReportState>()(
       fetchFromCloud: async () => {
         set({ isSyncing: true });
         try {
-          const res = await fetch('/api/reports');
-          if (!res.ok) throw new Error('Failed to fetch reports from cloud');
-          const cloudReports: Report[] = await res.json();
+          const cloudReports = await fetchReportsCloud();
 
           set((state) => {
             // Keep local reports that have pending changes and haven't synced yet
@@ -237,7 +193,7 @@ export const useReportStore = create<ReportState>()(
               reports: [...newLocalOnly, ...merged],
               isSyncing: false,
               cloudConnected: true,
-              lastSyncedAt: new Date().toLocaleTimeString(),
+              lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             };
           });
 
@@ -255,23 +211,13 @@ export const useReportStore = create<ReportState>()(
 
         set({ isSyncing: true });
         try {
-          const res = await fetch('/api/reports/batch-sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ localReports: pending }),
+          const updatedReports = await batchSyncReportsCloud(pending);
+          set({
+            reports: updatedReports,
+            isSyncing: false,
+            cloudConnected: true,
+            lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           });
-
-          if (res.ok) {
-            const data = await res.json();
-            if (data.reports) {
-              set({
-                reports: data.reports,
-                isSyncing: false,
-                cloudConnected: true,
-                lastSyncedAt: new Date().toLocaleTimeString(),
-              });
-            }
-          }
         } catch (e) {
           console.warn('Batch sync failed (will retry later):', e);
           set({ isSyncing: false, cloudConnected: false });

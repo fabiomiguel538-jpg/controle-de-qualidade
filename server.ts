@@ -15,7 +15,8 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(cors());
-  app.use(express.json());
+  app.use(express.json({ limit: '20mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
   // Wait for DB initialization (only warning if no DATABASE_URL, won't crash so UI can still load)
   if (process.env.DATABASE_URL) {
@@ -80,8 +81,19 @@ async function startServer() {
   async function upsertReportInDb(report: any) {
     if (!report || !report.id) return null;
 
-    const id = report.id;
-    const reportDate = report.date || new Date().toISOString().split('T')[0];
+    const id = String(report.id);
+    let reportDate: string | null = report.date || null;
+    if (reportDate && !/^\d{4}-\d{2}-\d{2}$/.test(reportDate)) {
+      try {
+        reportDate = new Date(reportDate).toISOString().split('T')[0];
+      } catch {
+        reportDate = new Date().toISOString().split('T')[0];
+      }
+    }
+    if (!reportDate) {
+      reportDate = new Date().toISOString().split('T')[0];
+    }
+
     const shift = report.shift || 'A';
     const line = report.line || '';
     const leaderName = report.leaderName || '';
@@ -93,22 +105,23 @@ async function startServer() {
       : '';
     const finalizedAt = status === 'FINALIZADO' ? new Date() : null;
 
-    // Check existing
-    const existing = await query('SELECT id FROM reports WHERE id = $1', [id]);
-    if (existing.rows.length > 0) {
-      await query(`
-        UPDATE reports
-        SET report_date = $1, shift = $2, line = $3, leader_name = $4, format = $5, reference = $6,
-            status = $7, observations = $8, data = $9, updated_at = CURRENT_TIMESTAMP,
-            finalized_at = CASE WHEN $7 = 'FINALIZADO' AND finalized_at IS NULL THEN CURRENT_TIMESTAMP ELSE finalized_at END
-        WHERE id = $10
-      `, [reportDate, shift, line, leaderName, format, reference, status, obsText, JSON.stringify(report), id]);
-    } else {
-      await query(`
-        INSERT INTO reports (id, report_date, shift, line, leader_name, format, reference, status, observations, data, finalized_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-      `, [id, reportDate, shift, line, leaderName, format, reference, status, obsText, JSON.stringify(report), finalizedAt]);
-    }
+    await query(`
+      INSERT INTO reports (id, report_date, shift, line, leader_name, format, reference, status, observations, data, finalized_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      ON CONFLICT (id) DO UPDATE SET
+        report_date = EXCLUDED.report_date,
+        shift = EXCLUDED.shift,
+        line = EXCLUDED.line,
+        leader_name = EXCLUDED.leader_name,
+        format = EXCLUDED.format,
+        reference = EXCLUDED.reference,
+        status = EXCLUDED.status,
+        observations = EXCLUDED.observations,
+        data = EXCLUDED.data,
+        updated_at = CURRENT_TIMESTAMP,
+        finalized_at = CASE WHEN EXCLUDED.status = 'FINALIZADO' AND reports.finalized_at IS NULL THEN CURRENT_TIMESTAMP ELSE reports.finalized_at END
+    `, [id, reportDate, shift, line, leaderName, format, reference, status, obsText, JSON.stringify(report), finalizedAt]);
+
     return id;
   }
 

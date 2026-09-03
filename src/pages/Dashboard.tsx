@@ -30,7 +30,6 @@ export default function Dashboard() {
             <h1 className="text-xl font-bold">Painel de Produção</h1>
           </div>
           <div className="flex items-center gap-2">
-            <CloudSyncBadge showLabel={false} />
             <button onClick={logout} className="p-2 bg-neutral-800 rounded-full hover:bg-black transition-colors" title="Sair da conta">
               <LogOut size={20} />
             </button>
