@@ -1,0 +1,8 @@
+{
+  "name": "Controle Estatístico de Defeitos Visuais – Cerâmica",
+  "description": "Aplicativo para líder de produção registrar relatório diário de Controle Estatístico de Defeitos Visuais, gerando PDF final estruturado.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
