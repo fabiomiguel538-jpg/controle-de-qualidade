@@ -18,16 +18,23 @@ export default function Login() {
     const mockUsers: Record<string, any> = {
       'admin': { name: 'Administrador', pass: '741741', role: 'ADMIN' },
       'lidermatriz1': { name: 'Líder Matriz 1', pass: 'lider1', role: 'LIDER' },
+      'lidermatriz 1': { name: 'Líder Matriz 1', pass: 'lider1', role: 'LIDER' },
       'lidermatriz2': { name: 'Líder Matriz 2', pass: 'lider2', role: 'LIDER' },
+      'lidermatriz 2': { name: 'Líder Matriz 2', pass: 'lider2', role: 'LIDER' },
       'lidermatriz3': { name: 'Líder Matriz 3', pass: 'lider3', role: 'LIDER' },
-      'lidermatriz4': { name: 'Líder Matriz 4', pass: 'lider4', role: 'LIDER' }
+      'lidermatriz 3': { name: 'Líder Matriz 3', pass: 'lider3', role: 'LIDER' },
+      'lidermatriz4': { name: 'Líder Matriz 4', pass: 'lider4', role: 'LIDER' },
+      'lidermatriz 4': { name: 'Líder Matriz 4', pass: 'lider4', role: 'LIDER' }
     };
+
+    const cleanUsername = username.trim().toLowerCase();
+    const noSpacesUsername = cleanUsername.replace(/\s+/g, '');
 
     try {
       const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
+        body: JSON.stringify({ username: noSpacesUsername, password })
       });
 
       const contentType = res.headers.get('content-type') || '';
@@ -42,12 +49,12 @@ export default function Login() {
       throw new Error('Fallback to mock');
     } catch (e) {
       // Mock fallback if backend is unavailable, not configured, or if DB doesn't have the user yet
-      const user = mockUsers[username];
+      const user = mockUsers[cleanUsername] || mockUsers[noSpacesUsername];
       if (user && user.pass === password) {
         login({
-          id: username,
+          id: noSpacesUsername,
           name: user.name,
-          email: username,
+          email: noSpacesUsername,
           role: user.role,
           token: 'mock-jwt-token'
         });

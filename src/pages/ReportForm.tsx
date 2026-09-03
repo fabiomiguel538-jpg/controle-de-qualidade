@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useReportStore, Report } from '../store/reportStore';
 import { useAuthStore } from '../store/authStore';
-import { ChevronLeft, Plus, Trash2, CheckCircle, Save, FileDown, ArrowRight, Clock, UploadCloud, Check, RefreshCw } from 'lucide-react';
-import { DEFECTS_LIST } from '../lib/constants';
+import { ChevronLeft, Plus, Trash2, CheckCircle, Save, FileDown, ArrowRight, Clock, UploadCloud, Check, RefreshCw, Sparkles } from 'lucide-react';
+import { DEFECTS_LIST, SHIFT_HOURS } from '../lib/constants';
 import { generatePDF } from '../lib/pdfGenerator';
 import clsx from 'clsx';
 import CloudSyncBadge from '../components/CloudSyncBadge';
+import TimeInput from '../components/TimeInput';
 
 export default function ReportForm() {
   const navigate = useNavigate();
@@ -14,8 +15,22 @@ export default function ReportForm() {
   const { user } = useAuthStore();
   const { reports, createNewReport, updateCurrentReport, setCurrentReport, currentReportId, finalizeReport, saveReportNow, isSyncing } = useReportStore();
   
-  const [activeTab, setActiveTab] = useState<'info' | 'thickness' | 'warp' | 'process' | 'weights' | 'defects' | 'obs' | 'summary'>('info');
+  // Identifica se o usuário logado é o Líder Matriz 2 (ou admin para suporte)
+  const isLiderMatriz2 = Boolean(
+    user && (
+      user.email?.toLowerCase().replace(/\s+/g, '') === 'lidermatriz2' ||
+      user.id?.toLowerCase().replace(/\s+/g, '') === 'lidermatriz2' ||
+      user.name?.toLowerCase().includes('matriz 2') ||
+      user.name?.toLowerCase().includes('matriz2') ||
+      user.role === 'ADMIN'
+    )
+  );
+
+type TabKey = 'info' | 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurvature' | 'process' | 'weights' | 'defects' | 'obs' | 'summary';
+
+  const [activeTab, setActiveTab] = useState<TabKey>('info');
   const [defectTime, setDefectTime] = useState(new Date().toTimeString().substring(0, 5));
+  const [obsTime, setObsTime] = useState(new Date().toTimeString().substring(0, 5));
   const [defectEntries, setDefectEntries] = useState([{ id: '', amount: '', obs: '' }]);
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
 
@@ -65,16 +80,361 @@ export default function ReportForm() {
     navigate('/');
   };
 
-  const TABS = [
+  const getNextShiftHour = (existingTimes: string[], shift: string) => {
+    const shiftList = SHIFT_HOURS[shift] || SHIFT_HOURS['A'];
+    const unused = shiftList.find(h => !existingTimes.includes(h));
+    if (unused) return unused;
+    return new Date().toTimeString().substring(0, 5);
+  };
+
+  const handleDefineShiftHours = (targetShift: string = report.shift) => {
+    const hours = SHIFT_HOURS[targetShift] || SHIFT_HOURS['A'];
+
+    const newThickness = hours.map((time, i) => {
+      const existing = report.thickness[i];
+      return existing ? { ...existing, time } : { time, cv: 'A', l1: 0, l2: 0, l3: 0, l4: 0 };
+    });
+
+    const newWarp = hours.map((time, i) => {
+      const existing = report.warp[i];
+      return existing ? { ...existing, time } : { time, pc1: 0, pc2: 0, pc3: 0, pc4: 0, pc5: 0, pc6: 0, pc7: 0 };
+    });
+
+    const newCC = hours.map((time, i) => {
+      const existing = report.centralCurvature[i];
+      return existing ? { ...existing, time } : { time, pc1: 0, pc2: 0, pc3: 0, pc4: 0, pc5: 0, pc6: 0, pc7: 0 };
+    });
+
+    const newCL = hours.map((time, i) => {
+      const existing = report.lateralCurvature[i];
+      return existing ? { ...existing, time } : { time, pc1: 0, pc2: 0, pc3: 0, pc4: 0, pc5: 0, pc6: 0, pc7: 0 };
+    });
+
+    const newProcess = hours.map((time, i) => {
+      const existing = report.processChecks?.[i];
+      return existing ? { ...existing, time } : { time, taratura: '-' as const, corte: '-' as const, lascamento: '-' as const };
+    });
+
+    const newBoxWeights = hours.map((time, i) => {
+      const existing = report.boxWeights?.[i];
+      return existing ? { ...existing, time } : { time, weight: 0 };
+    });
+
+    update({
+      shift: targetShift,
+      thickness: newThickness,
+      warp: newWarp,
+      centralCurvature: newCC,
+      lateralCurvature: newCL,
+      processChecks: newProcess,
+      boxWeights: newBoxWeights,
+    });
+
+    setSyncFeedback(`Horários do Turno ${targetShift} definidos com sucesso! (${hours[0]} às ${hours[hours.length - 1]})`);
+    setTimeout(() => setSyncFeedback(null), 3500);
+  };
+
+  const handleDefineShiftHoursForSection = (section: 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurvature' | 'process' | 'weights') => {
+    const hours = SHIFT_HOURS[report.shift] || SHIFT_HOURS['A'];
+
+    if (section === 'thickness') {
+      const updated = hours.map((time, i) => {
+        const existing = report.thickness[i];
+        return existing ? { ...existing, time } : { time, cv: 'A', l1: 0, l2: 0, l3: 0, l4: 0 };
+      });
+      update({ thickness: updated });
+    } else if (section === 'warp') {
+      const updated = hours.map((time, i) => {
+        const existing = report.warp[i];
+        return existing ? { ...existing, time } : { time, pc1: 0, pc2: 0, pc3: 0, pc4: 0, pc5: 0, pc6: 0, pc7: 0 };
+      });
+      update({ warp: updated });
+    } else if (section === 'centralCurvature') {
+      const updated = hours.map((time, i) => {
+        const existing = report.centralCurvature[i];
+        return existing ? { ...existing, time } : { time, pc1: 0, pc2: 0, pc3: 0, pc4: 0, pc5: 0, pc6: 0, pc7: 0 };
+      });
+      update({ centralCurvature: updated });
+    } else if (section === 'lateralCurvature') {
+      const updated = hours.map((time, i) => {
+        const existing = report.lateralCurvature[i];
+        return existing ? { ...existing, time } : { time, pc1: 0, pc2: 0, pc3: 0, pc4: 0, pc5: 0, pc6: 0, pc7: 0 };
+      });
+      update({ lateralCurvature: updated });
+    } else if (section === 'process') {
+      const updated = hours.map((time, i) => {
+        const existing = report.processChecks?.[i];
+        return existing ? { ...existing, time } : { time, taratura: '-' as const, corte: '-' as const, lascamento: '-' as const };
+      });
+      update({ processChecks: updated });
+    } else if (section === 'weights') {
+      const updated = hours.map((time, i) => {
+        const existing = report.boxWeights?.[i];
+        return existing ? { ...existing, time } : { time, weight: 0 };
+      });
+      update({ boxWeights: updated });
+    }
+
+    setSyncFeedback(`Horários do Turno ${report.shift} definidos para esta seção!`);
+    setTimeout(() => setSyncFeedback(null), 3000);
+  };
+
+  // Helper para gerar número aleatório próximo ao valor manual base (com 1 casa decimal)
+  const generateCloseValue = (base: number): number => {
+    if (base === 0) return 0;
+    // Variações aleatórias pequenas e naturais em torno do valor base (ex: 0.4 -> 0.3, 0.4, 0.5):
+    const deltas = [-0.2, -0.1, -0.1, 0, 0, 0, 0.1, 0.1, 0.2];
+    const delta = deltas[Math.floor(Math.random() * deltas.length)];
+    let result = Math.round((base + delta) * 10) / 10;
+    if (result < 0) result = 0;
+    return result;
+  };
+
+  // Preenche as peças 2 a 7 de uma medição com números próximos da 1ª peça (PC1)
+  const handleAutoFillPieces = (key: 'warp' | 'centralCurvature' | 'lateralCurvature', rowIndex: number) => {
+    const list = [...(report as any)[key]];
+    const row = { ...list[rowIndex] };
+
+    // Obter os valores dos 4 lados da Peça 1 (L1, L2, L3, L4)
+    let pc1Sides: number[] = Array.isArray(row.pc1_s) ? [...row.pc1_s] : [0, 0, 0, 0];
+    while (pc1Sides.length < 4) pc1Sides.push(0);
+
+    // Se todos os lados estiverem 0 mas row.pc1 tiver valor, define no L1
+    const hasSides = pc1Sides.some((v) => (v || 0) > 0);
+    if (!hasSides && (row.pc1 || 0) > 0) {
+      pc1Sides[0] = row.pc1;
+      row.pc1_s = [...pc1Sides];
+    }
+
+    const baseMax = Math.max(...pc1Sides.map((v) => v || 0));
+    if (baseMax === 0 && (!row.pc1 || row.pc1 === 0)) {
+      setSyncFeedback('⚠️ Digite a medida da Peça 1 (L1..L4) primeiro para gerar as outras!');
+      setTimeout(() => setSyncFeedback(null), 3500);
+      return;
+    }
+
+    const cols = ['pc2', 'pc3', 'pc4', 'pc5', 'pc6', 'pc7'];
+    cols.forEach((col) => {
+      const newSides = pc1Sides.map((baseVal) => {
+        if (!baseVal || baseVal === 0) return 0;
+        return generateCloseValue(baseVal);
+      });
+      row[`${col}_s`] = newSides;
+      row[col] = Math.max(...newSides.map((v) => v || 0));
+    });
+
+    list[rowIndex] = row;
+    update({ [key]: list });
+    setSyncFeedback('✨ Peças 2 a 7 preenchidas automaticamente com números próximos da 1ª peça!');
+    setTimeout(() => setSyncFeedback(null), 3000);
+  };
+
+  // Preenche as peças 2 a 7 em todas as medições que possuam a Peça 1 preenchida
+  const handleAutoFillAllPieces = (key: 'warp' | 'centralCurvature' | 'lateralCurvature') => {
+    const list = [...(report as any)[key]];
+    let filledCount = 0;
+
+    const updated = list.map((item) => {
+      const row = { ...item };
+      let pc1Sides: number[] = Array.isArray(row.pc1_s) ? [...row.pc1_s] : [0, 0, 0, 0];
+      while (pc1Sides.length < 4) pc1Sides.push(0);
+
+      const hasSides = pc1Sides.some((v) => (v || 0) > 0);
+      if (!hasSides && (row.pc1 || 0) > 0) {
+        pc1Sides[0] = row.pc1;
+        row.pc1_s = [...pc1Sides];
+      }
+
+      const baseMax = Math.max(...pc1Sides.map((v) => v || 0));
+      if (baseMax > 0 || (row.pc1 || 0) > 0) {
+        filledCount++;
+        const cols = ['pc2', 'pc3', 'pc4', 'pc5', 'pc6', 'pc7'];
+        cols.forEach((col) => {
+          const newSides = pc1Sides.map((baseVal) => {
+            if (!baseVal || baseVal === 0) return 0;
+            return generateCloseValue(baseVal);
+          });
+          row[`${col}_s`] = newSides;
+          row[col] = Math.max(...newSides.map((v) => v || 0));
+        });
+      }
+      return row;
+    });
+
+    if (filledCount === 0) {
+      setSyncFeedback('⚠️ Nenhuma medição possui valores na Peça 1 para calcular!');
+      setTimeout(() => setSyncFeedback(null), 3500);
+      return;
+    }
+
+    update({ [key]: updated });
+    setSyncFeedback(`✨ Peças 2 a 7 geradas em ${filledCount} medição(ões)!`);
+    setTimeout(() => setSyncFeedback(null), 3000);
+  };
+
+  const TABS: { id: TabKey; label: string }[] = [
     { id: 'info', label: 'Identificação' },
     { id: 'thickness', label: 'Espessura' },
-    { id: 'warp', label: 'Empeno / Curvatura' },
+    { id: 'warp', label: 'Empeno' },
+    { id: 'centralCurvature', label: 'Curvatura Central' },
+    { id: 'lateralCurvature', label: 'Curvatura Lateral' },
     { id: 'process', label: 'Processo' },
-    { id: 'weights', label: 'Pesagem da Caixa' },
+    { id: 'weights', label: 'Pesagem Caixa' },
     { id: 'defects', label: 'Defeitos' },
     { id: 'obs', label: 'Observações' },
     { id: 'summary', label: 'Resumo & PDF' }
-  ] as const;
+  ];
+
+  const renderCurvatureSection = (key: 'warp' | 'centralCurvature' | 'lateralCurvature', title: string) => (
+    <div className="space-y-6 max-w-lg mx-auto">
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-neutral-100">
+        <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
+          <h2 className="text-lg font-bold text-neutral-800">{title}</h2>
+          {!isFinalized && (
+            <div className="flex flex-wrap items-center gap-2">
+              <button 
+                type="button"
+                onClick={() => handleDefineShiftHoursForSection(key)}
+                className="flex items-center text-xs font-bold text-neutral-700 bg-neutral-100 hover:bg-neutral-200 px-2.5 py-2 rounded-lg border border-neutral-200 active:scale-95 transition-all"
+                title="Definir as 8 horas do turno"
+              >
+                <Clock size={13} className="mr-1 text-orange-500" /> Horários Turno {report.shift}
+              </button>
+              {isLiderMatriz2 && (report as any)[key].length > 0 && (
+                <button 
+                  type="button"
+                  onClick={() => handleAutoFillAllPieces(key)}
+                  className="flex items-center text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 px-2.5 py-2 rounded-lg border border-amber-300 active:scale-95 transition-all"
+                  title="Gera peças 2 a 7 para todas as horas com base na Peça 1"
+                >
+                  <Sparkles size={13} className="mr-1 text-amber-600 stroke-[2.5]" /> Auto Pçs 2-7 em Todas
+                </button>
+              )}
+              <button 
+                onClick={() => {
+                  const nextTime = getNextShiftHour(((report as any)[key] || []).map((t: any) => t.time), report.shift);
+                  update({ [key]: [...(report as any)[key], { time: nextTime, pc1: 0, pc2: 0, pc3: 0, pc4: 0, pc5: 0, pc6: 0, pc7: 0 }] });
+                }}
+                className="flex items-center text-xs font-bold text-orange-600 bg-orange-50 hover:bg-orange-100 px-3 py-2 rounded-lg border border-orange-200 active:scale-95 transition-all"
+              >
+                <Plus size={14} className="mr-1" /> Adicionar
+              </button>
+            </div>
+          )}
+        </div>
+
+        {(report as any)[key].length === 0 ? (
+          <p className="text-neutral-500 text-center py-6 bg-neutral-50 rounded-xl border border-dashed border-neutral-200">Nenhuma medição registrada.</p>
+        ) : (
+          <div className="space-y-6">
+            {(report as any)[key].map((item: any, index: number) => (
+              <div key={index} className="p-4 border border-neutral-200 rounded-xl bg-neutral-50 overflow-x-auto">
+                <div className="flex flex-wrap justify-between items-center mb-4 min-w-[300px] gap-2">
+                  <div className="w-36">
+                    <TimeInput 
+                      value={item.time}
+                      onChange={(newTime) => {
+                        const newList = [...(report as any)[key]];
+                        newList[index].time = newTime;
+                        update({ [key]: newList });
+                      }}
+                      disabled={isFinalized}
+                      shift={report.shift}
+                      className="p-2 text-sm"
+                      label={`Medição ${index + 1} - ${title}`}
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {isLiderMatriz2 && !isFinalized && (
+                      <button 
+                        type="button"
+                        onClick={() => handleAutoFillPieces(key, index)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 active:scale-95 text-white font-bold text-xs rounded-xl shadow-sm transition-all"
+                        title="Preenche as peças 2 a 7 automaticamente com números próximos aos da Peça 1"
+                      >
+                        <Sparkles size={13} className="stroke-[2.5]" />
+                        <span>Auto Pçs 2 a 7</span>
+                      </button>
+                    )}
+
+                    {!isFinalized && (
+                      <button 
+                        onClick={() => {
+                          const newList = [...(report as any)[key]];
+                          newList.splice(index, 1);
+                          update({ [key]: newList });
+                        }}
+                        className="text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Excluir medição"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="space-y-4">
+                  {['pc1', 'pc2', 'pc3', 'pc4', 'pc5', 'pc6', 'pc7'].map((col, pcIdx) => (
+                    <div key={col} className="bg-white p-3 rounded-lg border border-neutral-200 shadow-sm">
+                      <div className="flex justify-between items-center mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-neutral-700">Peça {pcIdx + 1}</span>
+                          {isLiderMatriz2 && !isFinalized && pcIdx === 0 && (
+                            <button
+                              type="button"
+                              onClick={() => handleAutoFillPieces(key, index)}
+                              className="text-[11px] font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 px-2 py-0.5 rounded flex items-center gap-1 active:scale-95 transition-all shadow-xs"
+                              title="Coloque a medida desta 1ª peça e clique aqui para preencher as peças 2 a 7 com valores próximos"
+                            >
+                              <Sparkles size={11} className="stroke-[2.5] text-amber-600" />
+                              <span>Gerar Pçs 2 a 7</span>
+                            </button>
+                          )}
+                        </div>
+                        <span className="text-xs font-bold text-orange-800 bg-orange-100 px-2 py-1 rounded">
+                          Maior: {item[col] || 0}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-2">
+                        {[0, 1, 2, 3].map(sideIdx => (
+                          <div key={sideIdx}>
+                            <label className="block text-center text-[10px] text-neutral-500 mb-1">L{sideIdx + 1}</label>
+                            <input
+                              type="number"
+                              step="0.1"
+                              value={item[`${col}_s`]?.[sideIdx] ?? ''}
+                              onChange={(e) => {
+                                const newList = [...(report as any)[key]];
+                                const sides = [...(newList[index][`${col}_s`] || [0,0,0,0])];
+                                sides[sideIdx] = parseFloat(e.target.value) || 0;
+                                newList[index][`${col}_s`] = sides;
+                                newList[index][col] = Math.max(...sides.map(v => v || 0));
+                                update({ [key]: newList });
+                              }}
+                              disabled={isFinalized}
+                              className="w-full p-2 text-center text-sm border border-neutral-300 rounded bg-neutral-50"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                
+                <div className="mt-4 pt-4 border-t border-neutral-200 flex justify-between items-center">
+                  <span className="text-sm font-bold text-neutral-700">MAIOR DA HORA:</span>
+                  <span className="text-lg font-black text-neutral-900 bg-neutral-200 px-3 py-1 rounded">
+                    {Math.max(item.pc1 || 0, item.pc2 || 0, item.pc3 || 0, item.pc4 || 0, item.pc5 || 0, item.pc6 || 0, item.pc7 || 0)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen flex flex-col bg-neutral-100">
@@ -188,6 +548,23 @@ export default function ReportForm() {
                       </button>
                     ))}
                   </div>
+                  <div className="mt-2.5 flex items-center justify-between bg-neutral-50 p-3 rounded-xl border border-neutral-200">
+                    <div className="text-xs text-neutral-600">
+                      <span className="font-bold text-neutral-800">Horários Turno {report.shift}:</span>{' '}
+                      {(SHIFT_HOURS[report.shift] || []).join(' • ')}
+                    </div>
+                    {!isFinalized && (
+                      <button
+                        type="button"
+                        onClick={() => handleDefineShiftHours(report.shift)}
+                        className="px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold rounded-lg shadow-sm active:scale-95 transition-all flex items-center gap-1.5 whitespace-nowrap ml-2"
+                        title="Definir os horários deste turno em todas as seções"
+                      >
+                        <Clock size={13} />
+                        <span>Definir Horários</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div>
@@ -241,18 +618,28 @@ export default function ReportForm() {
         {activeTab === 'thickness' && (
           <div className="space-y-6 max-w-lg mx-auto">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-neutral-100">
-              <div className="flex justify-between items-center mb-4">
+              <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
                 <h2 className="text-lg font-bold text-neutral-800">Controle de Espessura</h2>
                 {!isFinalized && (
-                  <button 
-                    onClick={() => {
-                      const now = new Date().toTimeString().substring(0, 5);
-                      update({ thickness: [...report.thickness, { time: now, cv: 'A', l1: 0, l2: 0, l3: 0, l4: 0 }] });
-                    }}
-                    className="flex items-center text-sm font-semibold text-orange-600 bg-orange-50 px-3 py-2 rounded-lg"
-                  >
-                    <Plus size={16} className="mr-1" /> Adicionar
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      type="button"
+                      onClick={() => handleDefineShiftHoursForSection('thickness')}
+                      className="flex items-center text-xs font-bold text-neutral-700 bg-neutral-100 hover:bg-neutral-200 px-2.5 py-2 rounded-lg border border-neutral-200 active:scale-95 transition-all"
+                      title="Definir as 8 horas do turno"
+                    >
+                      <Clock size={13} className="mr-1 text-orange-500" /> Horários Turno {report.shift}
+                    </button>
+                    <button 
+                      onClick={() => {
+                        const nextTime = getNextShiftHour(report.thickness.map(t => t.time), report.shift);
+                        update({ thickness: [...report.thickness, { time: nextTime, cv: 'A', l1: 0, l2: 0, l3: 0, l4: 0 }] });
+                      }}
+                      className="flex items-center text-xs font-bold text-orange-600 bg-orange-50 hover:bg-orange-100 px-3 py-2 rounded-lg border border-orange-200 active:scale-95 transition-all"
+                    >
+                      <Plus size={14} className="mr-1" /> Adicionar
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -262,18 +649,21 @@ export default function ReportForm() {
                 <div className="space-y-6">
                   {report.thickness.map((item, index) => (
                     <div key={index} className="p-4 border border-neutral-200 rounded-xl bg-neutral-50">
-                      <div className="flex justify-between items-center mb-4">
-                        <input 
-                          type="time" 
-                          value={item.time}
-                          onChange={(e) => {
-                            const newThick = [...report.thickness];
-                            newThick[index].time = e.target.value;
-                            update({ thickness: newThick });
-                          }}
-                          disabled={isFinalized}
-                          className="p-2 border rounded-lg bg-white"
-                        />
+                      <div className="flex justify-between items-center mb-4 gap-3">
+                        <div className="w-36">
+                          <TimeInput 
+                            value={item.time}
+                            onChange={(newTime) => {
+                              const newThick = [...report.thickness];
+                              newThick[index].time = newTime;
+                              update({ thickness: newThick });
+                            }}
+                            disabled={isFinalized}
+                            shift={report.shift}
+                            className="p-2 text-sm"
+                            label={`Medição ${index + 1} - Espessura`}
+                          />
+                        </div>
                         {!isFinalized && (
                           <button 
                             onClick={() => {
@@ -338,128 +728,41 @@ export default function ReportForm() {
           </div>
         )}
 
-        {/* TAB 3: WARP & CURVATURE */}
-        {activeTab === 'warp' && (
-          <div className="space-y-6 max-w-lg mx-auto">
-            {[
-              { key: 'warp', title: 'Empeno (E)' },
-              { key: 'centralCurvature', title: 'Curvatura Central (CC)' },
-              { key: 'lateralCurvature', title: 'Curvatura Lateral (CL)' },
-            ].map(({ key, title }) => (
-              <div key={key} className="bg-white p-6 rounded-2xl shadow-sm border border-neutral-100">
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-lg font-bold text-neutral-800">{title}</h2>
-                  {!isFinalized && (
-                    <button 
-                      onClick={() => {
-                        const now = new Date().toTimeString().substring(0, 5);
-                        update({ [key]: [...(report as any)[key], { time: now, pc1: 0, pc2: 0, pc3: 0, pc4: 0, pc5: 0, pc6: 0, pc7: 0 }] });
-                      }}
-                      className="flex items-center text-sm font-semibold text-orange-600 bg-orange-50 px-3 py-2 rounded-lg"
-                    >
-                      <Plus size={16} className="mr-1" /> Adicionar
-                    </button>
-                  )}
-                </div>
+        {/* TAB 3: EMPENO */}
+        {activeTab === 'warp' && renderCurvatureSection('warp', 'Empeno')}
 
-                {(report as any)[key].length === 0 ? (
-                  <p className="text-neutral-500 text-center py-6 bg-neutral-50 rounded-xl border border-dashed border-neutral-200">Nenhuma medição registrada.</p>
-                ) : (
-                  <div className="space-y-6">
-                    {(report as any)[key].map((item: any, index: number) => (
-                      <div key={index} className="p-4 border border-neutral-200 rounded-xl bg-neutral-50 overflow-x-auto">
-                        <div className="flex justify-between items-center mb-4 min-w-[300px]">
-                          <input 
-                            type="time" 
-                            value={item.time}
-                            onChange={(e) => {
-                              const newList = [...(report as any)[key]];
-                              newList[index].time = e.target.value;
-                              update({ [key]: newList });
-                            }}
-                            disabled={isFinalized}
-                            className="p-2 border rounded-lg bg-white"
-                          />
-                          {!isFinalized && (
-                            <button 
-                              onClick={() => {
-                                const newList = [...(report as any)[key]];
-                                newList.splice(index, 1);
-                                update({ [key]: newList });
-                              }}
-                              className="text-red-500 p-2"
-                            >
-                              <Trash2 size={20} />
-                            </button>
-                          )}
-                        </div>
-                        
-                        <div className="space-y-4">
-                          {['pc1', 'pc2', 'pc3', 'pc4', 'pc5', 'pc6', 'pc7'].map((col, pcIdx) => (
-                            <div key={col} className="bg-white p-3 rounded-lg border border-neutral-200 shadow-sm">
-                              <div className="flex justify-between items-center mb-2">
-                                <span className="text-sm font-bold text-neutral-700">Peça {pcIdx + 1}</span>
-                                <span className="text-xs font-bold text-orange-800 bg-orange-100 px-2 py-1 rounded">
-                                  Maior: {item[col] || 0}
-                                </span>
-                              </div>
-                              <div className="grid grid-cols-4 gap-2">
-                                {[0, 1, 2, 3].map(sideIdx => (
-                                  <div key={sideIdx}>
-                                    <label className="block text-center text-[10px] text-neutral-500 mb-1">L{sideIdx + 1}</label>
-                                    <input
-                                      type="number"
-                                      step="0.1"
-                                      value={item[`${col}_s`]?.[sideIdx] ?? ''}
-                                      onChange={(e) => {
-                                        const newList = [...(report as any)[key]];
-                                        const sides = [...(newList[index][`${col}_s`] || [0,0,0,0])];
-                                        sides[sideIdx] = parseFloat(e.target.value) || 0;
-                                        newList[index][`${col}_s`] = sides;
-                                        newList[index][col] = Math.max(...sides.map(v => v || 0));
-                                        update({ [key]: newList });
-                                      }}
-                                      disabled={isFinalized}
-                                      className="w-full p-2 text-center text-sm border border-neutral-300 rounded bg-neutral-50"
-                                    />
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                        
-                        <div className="mt-4 pt-4 border-t border-neutral-200 flex justify-between items-center">
-                          <span className="text-sm font-bold text-neutral-700">MAIOR DA HORA:</span>
-                          <span className="text-lg font-black text-neutral-900 bg-neutral-200 px-3 py-1 rounded">
-                            {Math.max(item.pc1 || 0, item.pc2 || 0, item.pc3 || 0, item.pc4 || 0, item.pc5 || 0, item.pc6 || 0, item.pc7 || 0)}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+        {/* TAB 4: CURVATURA CENTRAL */}
+        {activeTab === 'centralCurvature' && renderCurvatureSection('centralCurvature', 'Curvatura Central (CC)')}
+
+        {/* TAB 5: CURVATURA LATERAL */}
+        {activeTab === 'lateralCurvature' && renderCurvatureSection('lateralCurvature', 'Curvatura Lateral (CL)')}
 
         {/* TAB: PROCESSO */}
         {activeTab === 'process' && (
           <div className="space-y-6 max-w-lg mx-auto">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-neutral-100">
-              <div className="flex justify-between items-center mb-4">
+              <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
                 <h2 className="text-lg font-bold text-neutral-800">Controle de Processo</h2>
                 {!isFinalized && (
-                  <button 
-                    onClick={() => {
-                      const now = new Date().toTimeString().substring(0, 5);
-                      update({ processChecks: [...(report.processChecks || []), { time: now, taratura: '-', corte: '-', lascamento: '-' }] });
-                    }}
-                    className="flex items-center text-sm font-semibold text-orange-600 bg-orange-50 px-3 py-2 rounded-lg"
-                  >
-                    <Plus size={16} className="mr-1" /> Adicionar
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      type="button"
+                      onClick={() => handleDefineShiftHoursForSection('process')}
+                      className="flex items-center text-xs font-bold text-neutral-700 bg-neutral-100 hover:bg-neutral-200 px-2.5 py-2 rounded-lg border border-neutral-200 active:scale-95 transition-all"
+                      title="Definir as 8 horas do turno"
+                    >
+                      <Clock size={13} className="mr-1 text-orange-500" /> Horários Turno {report.shift}
+                    </button>
+                    <button 
+                      onClick={() => {
+                        const nextTime = getNextShiftHour((report.processChecks || []).map(t => t.time), report.shift);
+                        update({ processChecks: [...(report.processChecks || []), { time: nextTime, taratura: '-', corte: '-', lascamento: '-' }] });
+                      }}
+                      className="flex items-center text-xs font-bold text-orange-600 bg-orange-50 hover:bg-orange-100 px-3 py-2 rounded-lg border border-orange-200 active:scale-95 transition-all"
+                    >
+                      <Plus size={14} className="mr-1" /> Adicionar
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -469,19 +772,19 @@ export default function ReportForm() {
                 <div className="space-y-4">
                   {report.processChecks.map((item, index) => (
                     <div key={index} className="p-4 border border-neutral-200 rounded-xl bg-neutral-50">
-                      <div className="flex justify-between items-center mb-4">
-                        <div className="flex items-center gap-2">
-                          <label className="text-sm font-semibold text-neutral-500">Hora</label>
-                          <input 
-                            type="time" 
+                      <div className="flex justify-between items-center mb-4 gap-3">
+                        <div className="w-36">
+                          <TimeInput 
                             value={item.time}
-                            onChange={(e) => {
+                            onChange={(newTime) => {
                               const newList = [...report.processChecks];
-                              newList[index].time = e.target.value;
+                              newList[index].time = newTime;
                               update({ processChecks: newList });
                             }}
                             disabled={isFinalized}
-                            className="p-2 border rounded-lg bg-white"
+                            shift={report.shift}
+                            className="p-2 text-sm"
+                            label={`Verificação ${index + 1} - Processo`}
                           />
                         </div>
                         {!isFinalized && (
@@ -551,18 +854,28 @@ export default function ReportForm() {
         {activeTab === 'weights' && (
           <div className="space-y-6 max-w-lg mx-auto">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-neutral-100">
-              <div className="flex justify-between items-center mb-4">
+              <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
                 <h2 className="text-lg font-bold text-neutral-800">Pesagem da Caixa</h2>
                 {!isFinalized && (
-                  <button 
-                    onClick={() => {
-                      const now = new Date().toTimeString().substring(0, 5);
-                      update({ boxWeights: [...(report.boxWeights || []), { time: now, weight: 0 }] });
-                    }}
-                    className="flex items-center text-sm font-semibold text-orange-600 bg-orange-50 px-3 py-2 rounded-lg"
-                  >
-                    <Plus size={16} className="mr-1" /> Adicionar
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      type="button"
+                      onClick={() => handleDefineShiftHoursForSection('weights')}
+                      className="flex items-center text-xs font-bold text-neutral-700 bg-neutral-100 hover:bg-neutral-200 px-2.5 py-2 rounded-lg border border-neutral-200 active:scale-95 transition-all"
+                      title="Definir as 8 horas do turno"
+                    >
+                      <Clock size={13} className="mr-1 text-orange-500" /> Horários Turno {report.shift}
+                    </button>
+                    <button 
+                      onClick={() => {
+                        const nextTime = getNextShiftHour((report.boxWeights || []).map(t => t.time), report.shift);
+                        update({ boxWeights: [...(report.boxWeights || []), { time: nextTime, weight: 0 }] });
+                      }}
+                      className="flex items-center text-xs font-bold text-orange-600 bg-orange-50 hover:bg-orange-100 px-3 py-2 rounded-lg border border-orange-200 active:scale-95 transition-all"
+                    >
+                      <Plus size={14} className="mr-1" /> Adicionar
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -571,19 +884,20 @@ export default function ReportForm() {
               ) : (
                 <div className="space-y-4">
                   {report.boxWeights.map((item, index) => (
-                    <div key={index} className="flex gap-4 p-4 border border-neutral-200 rounded-xl bg-neutral-50 items-center">
-                      <div className="flex-1">
+                    <div key={index} className="flex gap-3 p-4 border border-neutral-200 rounded-xl bg-neutral-50 items-center">
+                      <div className="w-36">
                         <label className="block text-xs font-semibold text-neutral-500 mb-1">Hora</label>
-                        <input 
-                          type="time" 
+                        <TimeInput 
                           value={item.time}
-                          onChange={(e) => {
+                          onChange={(newTime) => {
                             const newList = [...report.boxWeights];
-                            newList[index].time = e.target.value;
+                            newList[index].time = newTime;
                             update({ boxWeights: newList });
                           }}
                           disabled={isFinalized}
-                          className="w-full p-2 border rounded-lg bg-white"
+                          shift={report.shift}
+                          className="w-full p-2 text-sm"
+                          label={`Pesagem ${index + 1}`}
                         />
                       </div>
                       <div className="flex-1">
@@ -598,7 +912,7 @@ export default function ReportForm() {
                             update({ boxWeights: newList });
                           }}
                           disabled={isFinalized}
-                          className="w-full p-2 border rounded-lg bg-white"
+                          className="w-full p-2 border border-neutral-300 rounded-lg bg-white font-semibold text-neutral-800 outline-none focus:border-orange-500"
                         />
                       </div>
                       {!isFinalized && (
@@ -631,11 +945,12 @@ export default function ReportForm() {
                 <div className="bg-neutral-50 p-4 rounded-xl border border-neutral-200 mb-6">
                   <div className="mb-4">
                     <label className="block text-sm font-semibold text-neutral-700 mb-1">Horário do Registro</label>
-                    <input 
-                      type="time" 
+                    <TimeInput 
                       value={defectTime}
-                      onChange={(e) => setDefectTime(e.target.value)}
-                      className="w-full p-4 bg-white border border-neutral-300 rounded-xl font-bold text-lg" 
+                      onChange={(newTime) => setDefectTime(newTime)}
+                      shift={report.shift}
+                      className="w-full p-3 font-bold text-base"
+                      label="Horário do lote de defeitos"
                     />
                   </div>
 
@@ -820,20 +1135,32 @@ export default function ReportForm() {
               
               {!isFinalized && (
                 <div className="bg-neutral-50 p-4 rounded-xl border border-neutral-200 mb-6">
+                  <div className="mb-3">
+                    <label className="block text-xs font-semibold text-neutral-600 mb-1">Horário da Ocorrência</label>
+                    <div className="w-36">
+                      <TimeInput 
+                        value={obsTime}
+                        onChange={(newTime) => setObsTime(newTime)}
+                        shift={report.shift}
+                        className="p-2 text-sm"
+                        label="Horário da observação"
+                      />
+                    </div>
+                  </div>
                   <textarea
                     id="new-obs"
-                    className="w-full p-4 bg-white border border-neutral-300 rounded-xl mb-4 min-h-[120px] outline-none focus:border-orange-500"
+                    className="w-full p-4 bg-white border border-neutral-300 rounded-xl mb-4 min-h-[120px] outline-none focus:border-orange-500 font-medium text-neutral-800"
                     placeholder="Registre informações sobre o processo, ocorrências e problemas encontrados durante o turno..."
                   />
                   <button 
                     onClick={() => {
                       const obs = (document.getElementById('new-obs') as HTMLTextAreaElement).value;
                       if (!obs) return;
-                      const now = new Date().toTimeString().substring(0, 5);
-                      update({ observations: [...report.observations, { time: now, description: obs }] });
+                      update({ observations: [...report.observations, { time: obsTime, description: obs }] });
                       (document.getElementById('new-obs') as HTMLTextAreaElement).value = '';
+                      setObsTime(new Date().toTimeString().substring(0, 5));
                     }}
-                    className="w-full py-4 bg-neutral-800 text-white font-bold rounded-xl flex justify-center items-center active:bg-neutral-900"
+                    className="w-full py-4 bg-neutral-800 text-white font-bold rounded-xl flex justify-center items-center active:bg-neutral-900 shadow-md"
                   >
                     <Plus size={20} className="mr-2" /> Adicionar Observação
                   </button>
