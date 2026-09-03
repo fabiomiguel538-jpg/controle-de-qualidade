@@ -85,16 +85,23 @@ export async function initDatabase() {
         shift VARCHAR(10) NOT NULL,
         line VARCHAR(50),
         leader_id UUID REFERENCES users(id),
+        leader_name VARCHAR(255),
         format VARCHAR(50),
         reference VARCHAR(100),
         start_time VARCHAR(20),
         end_time VARCHAR(20),
         status VARCHAR(50) DEFAULT 'EM_ANDAMENTO',
         observations TEXT,
+        data JSONB,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         finalized_at TIMESTAMP WITH TIME ZONE
       );
+    `);
+
+    await client.query(`
+      ALTER TABLE reports ADD COLUMN IF NOT EXISTS leader_name VARCHAR(255);
+      ALTER TABLE reports ADD COLUMN IF NOT EXISTS data JSONB;
     `);
 
     // 3. thickness_measurements
@@ -102,7 +109,6 @@ export async function initDatabase() {
       CREATE TABLE IF NOT EXISTS thickness_measurements (
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
         report_id UUID REFERENCES reports(id) ON DELETE CASCADE,
-        measurement_time VARCHAR(20),
         measurement_time VARCHAR(20),
         cv VARCHAR(20),
         l1 NUMERIC,
@@ -118,7 +124,6 @@ export async function initDatabase() {
       CREATE TABLE IF NOT EXISTS warp_measurements (
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
         report_id UUID REFERENCES reports(id) ON DELETE CASCADE,
-        measurement_time VARCHAR(20),
         measurement_time VARCHAR(20),
         pc1 NUMERIC,
         pc2 NUMERIC,
@@ -137,7 +142,6 @@ export async function initDatabase() {
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
         report_id UUID REFERENCES reports(id) ON DELETE CASCADE,
         measurement_time VARCHAR(20),
-        measurement_time VARCHAR(20),
         pc1 NUMERIC,
         pc2 NUMERIC,
         pc3 NUMERIC,
@@ -154,7 +158,6 @@ export async function initDatabase() {
       CREATE TABLE IF NOT EXISTS lateral_curvature_measurements (
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
         report_id UUID REFERENCES reports(id) ON DELETE CASCADE,
-        measurement_time VARCHAR(20),
         measurement_time VARCHAR(20),
         pc1 NUMERIC,
         pc2 NUMERIC,

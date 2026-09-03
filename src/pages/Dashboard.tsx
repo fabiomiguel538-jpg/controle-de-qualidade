@@ -3,6 +3,7 @@ import { useAuthStore } from '../store/authStore';
 import { useReportStore } from '../store/reportStore';
 import { FileText, Plus, FolderOpen, CheckCircle, BarChart3, LogOut } from 'lucide-react';
 import VivaLogo from '../components/VivaLogo';
+import CloudSyncBadge from '../components/CloudSyncBadge';
 
 export default function Dashboard() {
   const { user, logout } = useAuthStore();
@@ -28,13 +29,21 @@ export default function Dashboard() {
             </div>
             <h1 className="text-xl font-bold">Painel de Produção</h1>
           </div>
-          <button onClick={logout} className="p-2 bg-neutral-800 rounded-full hover:bg-black transition-colors">
-            <LogOut size={20} />
-          </button>
+          <div className="flex items-center gap-2">
+            <CloudSyncBadge showLabel={false} />
+            <button onClick={logout} className="p-2 bg-neutral-800 rounded-full hover:bg-black transition-colors" title="Sair da conta">
+              <LogOut size={20} />
+            </button>
+          </div>
         </div>
-        <p className="text-orange-500 text-sm">Bem-vindo(a),</p>
-        <p className="text-2xl font-semibold">{user?.name}</p>
-        <p className="text-sm mt-1">{user?.role === 'LIDER' ? 'Líder de Turno' : 'Administrador'}</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-orange-500 text-sm">Bem-vindo(a),</p>
+            <p className="text-2xl font-semibold">{user?.name}</p>
+            <p className="text-sm mt-1">{user?.role === 'LIDER' ? 'Líder de Turno' : 'Administrador'}</p>
+          </div>
+          <CloudSyncBadge showLabel={true} />
+        </div>
       </header>
 
       <main className="p-4 -mt-6">

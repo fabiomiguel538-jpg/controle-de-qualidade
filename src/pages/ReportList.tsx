@@ -6,7 +6,7 @@ import { ChevronLeft, Search, FileText, CheckCircle, Clock, FileDown, BarChart2 
 import { format } from 'date-fns';
 import { generatePDF } from '../lib/pdfGenerator';
 import VivaLogo from '../components/VivaLogo';
-import VivaLogo from '../components/VivaLogo';
+import CloudSyncBadge from '../components/CloudSyncBadge';
 
 export default function ReportList() {
   const [searchParams] = useSearchParams();
@@ -63,10 +63,15 @@ export default function ReportList() {
         <Link to="/" className="p-2 mr-2 bg-neutral-100 rounded-full">
           <ChevronLeft size={24} />
         </Link>
-        <h1 className="text-xl font-bold flex-1">
-          {isAdmin ? 'Relatórios Finalizados' : 'Histórico de Relatórios'}
-        </h1>
-        <VivaLogo className="h-7 w-auto ml-2" variant="dark" />
+        <div className="flex-1">
+          <h1 className="text-xl font-bold">
+            {isAdmin ? 'Relatórios Finalizados' : 'Histórico de Relatórios'}
+          </h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <CloudSyncBadge showLabel={false} />
+          <VivaLogo className="h-7 w-auto ml-1" variant="dark" />
+        </div>
       </header>
 
       <div className="p-4">

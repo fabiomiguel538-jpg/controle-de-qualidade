@@ -6,6 +6,7 @@ import { ChevronLeft, Plus, Trash2, CheckCircle, Save, FileDown, ArrowRight, Clo
 import { DEFECTS_LIST } from '../lib/constants';
 import { generatePDF } from '../lib/pdfGenerator';
 import clsx from 'clsx';
+import CloudSyncBadge from '../components/CloudSyncBadge';
 
 export default function ReportForm() {
   const navigate = useNavigate();
@@ -41,12 +42,12 @@ export default function ReportForm() {
     updateCurrentReport(updates);
   };
 
-  const handleFinalize = () => {
+  const handleFinalize = async () => {
     if (!report.date || !report.shift || !report.line) {
       alert("Existem informações obrigatórias que ainda não foram preenchidas (Data, Turno, Linha).");
       return;
     }
-    finalizeReport(report.id);
+    await finalizeReport(report.id);
     generatePDF(report);
     navigate('/');
   };
@@ -73,8 +74,9 @@ export default function ReportForm() {
           <h1 className="text-xl font-bold text-neutral-800">
             {isFinalized ? 'Relatório Finalizado' : 'Preencher Relatório'}
           </h1>
-          <p className="text-xs text-neutral-500">Salvo automaticamente</p>
+          <p className="text-xs text-neutral-500">Salvo automaticamente na nuvem</p>
         </div>
+        <CloudSyncBadge />
       </header>
 
       {/* Tabs */}
