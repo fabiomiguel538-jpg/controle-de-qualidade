@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useReportStore, Report } from '../store/reportStore';
 import { useAuthStore } from '../store/authStore';
-import { ChevronLeft, Plus, Trash2, CheckCircle, Save, FileDown, ArrowRight, Clock } from 'lucide-react';
+import { ChevronLeft, Plus, Trash2, CheckCircle, Save, FileDown, ArrowRight, Clock, UploadCloud, Check, RefreshCw } from 'lucide-react';
 import { DEFECTS_LIST } from '../lib/constants';
 import { generatePDF } from '../lib/pdfGenerator';
 import clsx from 'clsx';
@@ -12,11 +12,12 @@ export default function ReportForm() {
   const navigate = useNavigate();
   const { id } = useParams<{ id?: string }>();
   const { user } = useAuthStore();
-  const { reports, createNewReport, updateCurrentReport, setCurrentReport, currentReportId, finalizeReport } = useReportStore();
+  const { reports, createNewReport, updateCurrentReport, setCurrentReport, currentReportId, finalizeReport, saveReportNow, isSyncing } = useReportStore();
   
   const [activeTab, setActiveTab] = useState<'info' | 'thickness' | 'warp' | 'process' | 'weights' | 'defects' | 'obs' | 'summary'>('info');
   const [defectTime, setDefectTime] = useState(new Date().toTimeString().substring(0, 5));
   const [defectEntries, setDefectEntries] = useState([{ id: '', amount: '', obs: '' }]);
+  const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     if (id) {
@@ -40,6 +41,18 @@ export default function ReportForm() {
   const update = (updates: Partial<Report>) => {
     if (isFinalized) return;
     updateCurrentReport(updates);
+  };
+
+  const handleSendToCloud = async () => {
+    if (!report) return;
+    const success = await saveReportNow(report.id);
+    if (success) {
+      setSyncFeedback('Dados enviados para a nuvem com sucesso!');
+      setTimeout(() => setSyncFeedback(null), 3500);
+    } else {
+      setSyncFeedback('Salvo no dispositivo (sem conexão com a nuvem no momento)');
+      setTimeout(() => setSyncFeedback(null), 3500);
+    }
   };
 
   const handleFinalize = async () => {
@@ -66,18 +79,59 @@ export default function ReportForm() {
   return (
     <div className="min-h-screen flex flex-col bg-neutral-100">
       {/* Header */}
-      <header className="bg-white border-b border-neutral-200 px-4 py-4 flex items-center shadow-sm z-10 sticky top-0">
-        <Link to="/" className="p-2 mr-2 bg-neutral-100 rounded-full active:scale-95">
-          <ChevronLeft size={24} />
-        </Link>
-        <div className="flex-1">
-          <h1 className="text-xl font-bold text-neutral-800">
-            {isFinalized ? 'Relatório Finalizado' : 'Preencher Relatório'}
-          </h1>
-          <p className="text-xs text-neutral-500">Salvo automaticamente na nuvem</p>
+      <header className="bg-white border-b border-neutral-200 px-4 py-3 flex items-center justify-between shadow-sm z-10 sticky top-0">
+        <div className="flex items-center gap-2 min-w-0 mr-2">
+          <Link to="/" className="p-2 bg-neutral-100 rounded-full active:scale-95 flex-shrink-0">
+            <ChevronLeft size={22} />
+          </Link>
+          <div className="min-w-0">
+            <h1 className="text-lg font-bold text-neutral-800 truncate">
+              {isFinalized ? 'Relatório Finalizado' : 'Preencher Relatório'}
+            </h1>
+            <p className="text-xs text-neutral-500 truncate">Salvo no aparelho • Envio sob demanda</p>
+          </div>
         </div>
-        <CloudSyncBadge />
+
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {!isFinalized && (
+            <button
+              onClick={handleSendToCloud}
+              disabled={isSyncing}
+              className={clsx(
+                "flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold shadow-sm active:scale-95 transition-all",
+                report.syncStatus === 'pending'
+                  ? "bg-orange-500 hover:bg-orange-600 text-white animate-pulse"
+                  : "bg-emerald-600 hover:bg-emerald-700 text-white"
+              )}
+              title="Aperte para enviar os dados deste relatório para a nuvem"
+            >
+              {isSyncing ? (
+                <>
+                  <RefreshCw size={13} className="animate-spin" />
+                  <span>Enviando...</span>
+                </>
+              ) : report.syncStatus === 'pending' ? (
+                <>
+                  <UploadCloud size={14} />
+                  <span>Enviar Dados</span>
+                </>
+              ) : (
+                <>
+                  <Check size={13} className="stroke-[3]" />
+                  <span>Nuvem Salva</span>
+                </>
+              )}
+            </button>
+          )}
+          <CloudSyncBadge showLabel={false} />
+        </div>
       </header>
+
+      {syncFeedback && (
+        <div className="bg-neutral-900 text-white text-xs font-medium py-2 px-4 text-center sticky top-[57px] z-20 shadow-md">
+          {syncFeedback}
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="bg-white border-b border-neutral-200 overflow-x-auto hide-scrollbar sticky top-[73px] z-10">
@@ -836,12 +890,32 @@ export default function ReportForm() {
               </div>
 
               {!isFinalized ? (
-                <button 
-                  onClick={handleFinalize}
-                  className="w-full py-5 bg-orange-500 text-white font-bold rounded-2xl flex justify-center items-center text-lg active:bg-orange-600 shadow-lg shadow-orange-200"
-                >
-                  <CheckCircle size={24} className="mr-2" /> Finalizar e Gerar PDF
-                </button>
+                <div className="space-y-3">
+                  <button 
+                    onClick={handleSendToCloud}
+                    disabled={isSyncing}
+                    className="w-full py-4 bg-neutral-900 hover:bg-black text-white font-bold rounded-2xl flex justify-center items-center text-base active:scale-[0.98] transition-all shadow-md"
+                  >
+                    {isSyncing ? (
+                      <>
+                        <RefreshCw size={18} className="mr-2 animate-spin text-orange-400" />
+                        <span>Enviando dados para a nuvem...</span>
+                      </>
+                    ) : (
+                      <>
+                        <UploadCloud size={20} className="mr-2 text-orange-400" />
+                        <span>Enviar Dados para a Nuvem</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button 
+                    onClick={handleFinalize}
+                    className="w-full py-5 bg-orange-500 text-white font-bold rounded-2xl flex justify-center items-center text-lg active:bg-orange-600 shadow-lg shadow-orange-200"
+                  >
+                    <CheckCircle size={24} className="mr-2" /> Finalizar e Gerar PDF
+                  </button>
+                </div>
               ) : (
                 <button 
                   onClick={() => generatePDF(report)}

@@ -19,40 +19,11 @@ export default function App() {
   const fetchFromCloud = useReportStore((state) => state.fetchFromCloud);
   const syncPendingReports = useReportStore((state) => state.syncPendingReports);
 
-  // Auto-sync with cloud database
+  // Load cloud data once on initial login/launch (no background auto-polling)
   useEffect(() => {
     if (!user) return;
-
-    // Fetch immediately on login / app launch
     fetchFromCloud();
-
-    // Periodic sync every 25 seconds
-    const interval = setInterval(() => {
-      fetchFromCloud();
-    }, 25000);
-
-    // Sync when coming back to tab / browser
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        fetchFromCloud();
-      }
-    };
-
-    // Sync when device reconnects to internet
-    const handleOnline = () => {
-      syncPendingReports();
-      fetchFromCloud();
-    };
-
-    document.addEventListener('visibilitychange', handleVisibility);
-    window.addEventListener('online', handleOnline);
-
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', handleVisibility);
-      window.removeEventListener('online', handleOnline);
-    };
-  }, [user, fetchFromCloud, syncPendingReports]);
+  }, [user, fetchFromCloud]);
 
   return (
     <div className="min-h-screen bg-neutral-100 text-neutral-800 font-sans">

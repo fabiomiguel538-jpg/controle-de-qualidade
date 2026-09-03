@@ -44,11 +44,9 @@ interface ReportState {
   markSynced: (id: string) => void;
   deleteReport: (id: string) => Promise<void>;
   fetchFromCloud: () => Promise<void>;
-  syncPendingReports: () => Promise<void>;
-  saveReportNow: (id?: string) => Promise<void>;
+  syncPendingReports: () => Promise<boolean>;
+  saveReportNow: (id?: string) => Promise<boolean>;
 }
-
-let syncTimeout: any = null;
 
 export const useReportStore = create<ReportState>()(
   persist(
@@ -91,11 +89,6 @@ export const useReportStore = create<ReportState>()(
           currentReportId: id,
         }));
 
-        // Immediately push new report to cloud
-        setTimeout(() => {
-          get().saveReportNow(id);
-        }, 100);
-
         return id;
       },
 
@@ -110,20 +103,14 @@ export const useReportStore = create<ReportState>()(
               : r
           ),
         }));
-
-        // Debounce cloud sync to avoid spamming on every keystroke
-        if (syncTimeout) clearTimeout(syncTimeout);
-        syncTimeout = setTimeout(() => {
-          get().saveReportNow(currentId);
-        }, 800);
       },
 
-      saveReportNow: async (idToSave?: string) => {
+      saveReportNow: async (idToSave?: string): Promise<boolean> => {
         const targetId = idToSave || get().currentReportId;
-        if (!targetId) return;
+        if (!targetId) return false;
 
         const targetReport = get().reports.find(r => r.id === targetId);
-        if (!targetReport) return;
+        if (!targetReport) return false;
 
         set({ isSyncing: true });
         try {
@@ -137,9 +124,11 @@ export const useReportStore = create<ReportState>()(
               r.id === targetId ? { ...r, syncStatus: 'synced' } : r
             ),
           }));
+          return true;
         } catch (e) {
           console.warn('Could not sync report to cloud (working offline):', e);
           set({ isSyncing: false, cloudConnected: false });
+          return false;
         }
       },
 
@@ -196,18 +185,19 @@ export const useReportStore = create<ReportState>()(
               lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             };
           });
-
-          // Sync any pending items in background
-          get().syncPendingReports();
         } catch (e) {
           console.warn('Error connecting to cloud reports (using offline cache):', e);
           set({ isSyncing: false, cloudConnected: false });
         }
       },
 
-      syncPendingReports: async () => {
+      syncPendingReports: async (): Promise<boolean> => {
         const pending = get().reports.filter(r => r.syncStatus === 'pending');
-        if (pending.length === 0) return;
+        if (pending.length === 0) {
+          // If none pending, just fetch latest from cloud to ensure sync
+          await get().fetchFromCloud();
+          return true;
+        }
 
         set({ isSyncing: true });
         try {
@@ -218,9 +208,11 @@ export const useReportStore = create<ReportState>()(
             cloudConnected: true,
             lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           });
+          return true;
         } catch (e) {
           console.warn('Batch sync failed (will retry later):', e);
           set({ isSyncing: false, cloudConnected: false });
+          return false;
         }
       },
 
