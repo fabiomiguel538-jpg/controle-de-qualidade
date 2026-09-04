@@ -1,5 +1,6 @@
 import { neon } from '@neondatabase/serverless';
 import { Report } from '../types';
+import { canUserAccessReport } from './permissions';
 
 // Fallback to direct Neon Serverless if running in static environment (like Netlify without server.ts)
 const getDatabaseUrl = () => {
@@ -37,6 +38,8 @@ function normalizeReportFromRow(row: any): Report {
     format: row.format || data.format || '',
     reference: row.reference || data.reference || '',
     status: row.status || data.status || 'EM_ANDAMENTO',
+    userId: data.userId || (row.leader_id ? String(row.leader_id) : undefined),
+    createdBy: data.createdBy || undefined,
     thickness: data.thickness || [],
     warp: data.warp || [],
     centralCurvature: data.centralCurvature || [],
@@ -53,15 +56,32 @@ function normalizeReportFromRow(row: any): Report {
 }
 
 /**
- * Fetch all reports from cloud (API first, direct Neon serverless fallback)
+ * Fetch reports from cloud (API first, direct Neon serverless fallback)
+ * Filters by user permissions:
+ * - Admin: only receives finalized reports
+ * - Regular users: only receive their own reports
  */
-export async function fetchReportsCloud(): Promise<Report[]> {
+export async function fetchReportsCloud(user?: any): Promise<Report[]> {
+  const queryParams = new URLSearchParams();
+  if (user) {
+    if (user.role) queryParams.set('role', user.role);
+    if (user.id) queryParams.set('userId', user.id);
+    if (user.email) queryParams.set('email', user.email);
+    if (user.name) queryParams.set('name', user.name);
+  }
+
+  const url = `/api/reports${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+
   try {
-    const res = await fetch('/api/reports', { headers: { Accept: 'application/json' } });
+    const res = await fetch(url, { headers: { Accept: 'application/json' } });
     const contentType = res.headers.get('content-type') || '';
     if (res.ok && contentType.includes('application/json')) {
       const data = await res.json();
       if (Array.isArray(data)) {
+        // Double check permissions on client-side
+        if (user) {
+          return data.filter(r => canUserAccessReport(r, user));
+        }
         return data;
       }
     }
@@ -76,7 +96,11 @@ export async function fetchReportsCloud(): Promise<Report[]> {
     FROM reports
     ORDER BY updated_at DESC
   `;
-  return (rows as any[]).map(normalizeReportFromRow);
+  const allReports = (rows as any[]).map(normalizeReportFromRow);
+  if (user) {
+    return allReports.filter(r => canUserAccessReport(r, user));
+  }
+  return allReports;
 }
 
 /**
@@ -146,9 +170,9 @@ export async function saveReportCloud(report: Report): Promise<void> {
 /**
  * Batch sync pending local reports with cloud database
  */
-export async function batchSyncReportsCloud(pendingReports: Report[]): Promise<Report[]> {
+export async function batchSyncReportsCloud(pendingReports: Report[], user?: any): Promise<Report[]> {
   if (pendingReports.length === 0) {
-    return fetchReportsCloud();
+    return fetchReportsCloud(user);
   }
 
   try {
@@ -161,6 +185,9 @@ export async function batchSyncReportsCloud(pendingReports: Report[]): Promise<R
     if (res.ok && contentType.includes('application/json')) {
       const data = await res.json();
       if (data && Array.isArray(data.reports)) {
+        if (user) {
+          return data.reports.filter((r: any) => canUserAccessReport(r, user));
+        }
         return data.reports;
       }
     }
@@ -173,7 +200,7 @@ export async function batchSyncReportsCloud(pendingReports: Report[]): Promise<R
     await saveReportCloud(r);
   }
 
-  return fetchReportsCloud();
+  return fetchReportsCloud(user);
 }
 
 /**

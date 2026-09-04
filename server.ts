@@ -131,11 +131,56 @@ async function startServer() {
       return res.status(503).json({ error: 'Banco de dados não configurado.' });
     }
     try {
-      const result = await query(`
+      const { role, userId, email, name } = req.query;
+
+      let queryText = `
         SELECT id, report_date, shift, line, leader_name, format, reference, status, data, updated_at, created_at, finalized_at
         FROM reports
-        ORDER BY updated_at DESC
-      `);
+      `;
+      const conditions: string[] = [];
+      const params: any[] = [];
+
+      if (role === 'ADMIN') {
+        // Admin only has access to finalized reports
+        conditions.push(`status = 'FINALIZADO'`);
+      } else if (userId || email || name) {
+        // Regular users only have access to their own reports
+        const uId = String(userId || '').trim();
+        const uEmail = String(email || '').trim();
+        const uName = String(name || '').trim();
+
+        const orClauses: string[] = [];
+        if (uId) {
+          params.push(uId);
+          orClauses.push(`data->>'userId' = $${params.length}`);
+          orClauses.push(`data->>'createdBy' = $${params.length}`);
+        }
+        if (uEmail && uEmail !== uId) {
+          params.push(uEmail);
+          orClauses.push(`data->>'userId' = $${params.length}`);
+          orClauses.push(`data->>'createdBy' = $${params.length}`);
+        }
+        if (uName) {
+          params.push(`%${uName}%`);
+          orClauses.push(`leader_name ILIKE $${params.length}`);
+          orClauses.push(`data->>'leaderName' ILIKE $${params.length}`);
+        }
+        if (uId) {
+          params.push(`%${uId}%`);
+          orClauses.push(`leader_name ILIKE $${params.length}`);
+        }
+
+        if (orClauses.length > 0) {
+          conditions.push(`(${orClauses.join(' OR ')})`);
+        }
+      }
+
+      if (conditions.length > 0) {
+        queryText += ` WHERE ` + conditions.join(' AND ');
+      }
+      queryText += ` ORDER BY updated_at DESC`;
+
+      const result = await query(queryText, params);
 
       const reports = result.rows.map(row => {
         const data = row.data || {};
@@ -149,6 +194,8 @@ async function startServer() {
           format: row.format || data.format || '',
           reference: row.reference || data.reference || '',
           status: row.status || data.status || 'EM_ANDAMENTO',
+          userId: data.userId || (row.leader_id ? String(row.leader_id) : undefined),
+          createdBy: data.createdBy || undefined,
           thickness: data.thickness || [],
           warp: data.warp || [],
           centralCurvature: data.centralCurvature || [],

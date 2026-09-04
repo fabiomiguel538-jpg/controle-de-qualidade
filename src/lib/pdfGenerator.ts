@@ -24,14 +24,46 @@ export const generatePDF = (report: Report) => {
   // Espessura
   let nextY = 45;
   if (report.thickness.length > 0) {
-    doc.text('1. CONTROLE DE ESPESSURA', 14, nextY);
+    doc.text('1. CONTROLE DE ESPESSURA (3 PEÇAS/HORA)', 14, nextY);
     autoTable(doc, {
       startY: nextY + 3,
-      head: [['Hora', 'C/V', 'L1', 'L2', 'L3', 'L4']],
-      body: report.thickness.map(t => [t.time, t.cv, t.l1, t.l2, t.l3, t.l4]),
+      head: [['Hora', 'C/V', 'Peça 1 (mm)', 'Peça 2 (mm)', 'Peça 3 (mm)', 'Média (mm)']],
+      body: report.thickness.map(t => {
+        const getPieceVal = (pc?: number, pc_s?: number[]) => {
+          if (pc && pc > 0) return pc;
+          if (pc_s && pc_s.some(v => (v || 0) > 0)) {
+            const valid = pc_s.filter(v => (v || 0) > 0);
+            return Math.round((valid.reduce((a, b) => a + b, 0) / valid.length) * 10) / 10;
+          }
+          return 0;
+        };
+
+        let p1 = getPieceVal(t.pc1, t.pc1_s);
+        if (p1 === 0 && ((t.l1 || 0) > 0 || (t.l2 || 0) > 0)) {
+          const leg = [t.l1, t.l2, t.l3, t.l4].filter((v): v is number => typeof v === 'number' && v > 0);
+          if (leg.length > 0) p1 = Math.round((leg.reduce((a, b) => a + b, 0) / leg.length) * 10) / 10;
+        }
+
+        const p2 = getPieceVal(t.pc2, t.pc2_s);
+        const p3 = getPieceVal(t.pc3, t.pc3_s);
+
+        const activePieces = [p1, p2, p3].filter(v => v > 0);
+        const avg = activePieces.length > 0 
+          ? (activePieces.reduce((a, b) => a + b, 0) / activePieces.length).toFixed(1) 
+          : '-';
+
+        return [
+          t.time,
+          t.cv || 'A',
+          p1 > 0 ? p1.toFixed(1) : '-',
+          p2 > 0 ? p2.toFixed(1) : '-',
+          p3 > 0 ? p3.toFixed(1) : '-',
+          avg
+        ];
+      }),
       theme: 'grid',
-      styles: { fontSize: 8, cellPadding: 1 },
-      headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0] }
+      styles: { fontSize: 8, cellPadding: 1, halign: 'center' },
+      headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], halign: 'center' }
     });
     nextY = (doc as any).lastAutoTable.finalY + 10;
   }
@@ -129,6 +161,43 @@ export const generatePDF = (report: Report) => {
       body: report.observations.map(o => [o.time, o.description]),
       theme: 'grid',
       styles: { fontSize: 8, cellPadding: 1 },
+      headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0] }
+    });
+    nextY = (doc as any).lastAutoTable.finalY + 10;
+  }
+
+  // Granel, Caixas Rasgadas, Repasses e Caçamba de Caco
+  const losses = report.productionLosses;
+  const hasLosses = losses && (
+    (losses.granel || 0) > 0 ||
+    (losses.caixasRasgadas || 0) > 0 ||
+    (losses.repasses || 0) > 0 ||
+    (losses.cacambaCaco || 0) > 0 ||
+    Boolean(losses.notes?.trim()) ||
+    Boolean(losses.entries?.length)
+  );
+
+  if (hasLosses && losses) {
+    if (nextY > 230) {
+      doc.addPage();
+      nextY = 20;
+    }
+    doc.text('9. CONTROLE DE GRANEL, REPASSES E DESCARTES', 14, nextY);
+    const body: string[][] = [
+      ['Granel', `${losses.granel || 0} ${losses.granelUnit || 'm²'}`],
+      ['Caixas Rasgadas', `${losses.caixasRasgadas || 0} cx`],
+      ['Repasses', `${losses.repasses || 0}`],
+      ['Caçamba de Caco', `${losses.cacambaCaco || 0} caçamba(s)`]
+    ];
+    if (losses.notes && losses.notes.trim()) {
+      body.push(['Observações Gerais', losses.notes.trim()]);
+    }
+    autoTable(doc, {
+      startY: nextY + 3,
+      head: [['Item / Classificação', 'Quantidade Registrada']],
+      body,
+      theme: 'grid',
+      styles: { fontSize: 8, cellPadding: 1.5 },
       headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0] }
     });
     nextY = (doc as any).lastAutoTable.finalY + 10;

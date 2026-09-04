@@ -44,8 +44,8 @@ interface ReportState {
   reopenReport: (id: string) => Promise<void>;
   markSynced: (id: string) => void;
   deleteReport: (id: string) => Promise<void>;
-  fetchFromCloud: () => Promise<void>;
-  syncPendingReports: () => Promise<boolean>;
+  fetchFromCloud: (user?: any) => Promise<void>;
+  syncPendingReports: (user?: any) => Promise<boolean>;
   saveReportNow: (id?: string) => Promise<boolean>;
 }
 
@@ -78,6 +78,15 @@ export const useReportStore = create<ReportState>()(
           boxWeights: [],
           processChecks: [],
           defects: [],
+          productionLosses: {
+            granel: 0,
+            granelUnit: 'm²',
+            caixasRasgadas: 0,
+            repasses: 0,
+            cacambaCaco: 0,
+            notes: '',
+            entries: []
+          },
           observations: [],
           changes: [],
           processInfo: {},
@@ -168,10 +177,10 @@ export const useReportStore = create<ReportState>()(
         }
       },
 
-      fetchFromCloud: async () => {
+      fetchFromCloud: async (user?: any) => {
         set({ isSyncing: true });
         try {
-          const cloudReports = await fetchReportsCloud();
+          const cloudReports = await fetchReportsCloud(user);
 
           set((state) => {
             // Keep local reports that have pending changes and haven't synced yet
@@ -203,17 +212,17 @@ export const useReportStore = create<ReportState>()(
         }
       },
 
-      syncPendingReports: async (): Promise<boolean> => {
+      syncPendingReports: async (user?: any): Promise<boolean> => {
         const pending = get().reports.filter(r => r.syncStatus === 'pending');
         if (pending.length === 0) {
           // If none pending, just fetch latest from cloud to ensure sync
-          await get().fetchFromCloud();
+          await get().fetchFromCloud(user);
           return true;
         }
 
         set({ isSyncing: true });
         try {
-          const updatedReports = await batchSyncReportsCloud(pending);
+          const updatedReports = await batchSyncReportsCloud(pending, user);
           set({
             reports: updatedReports,
             isSyncing: false,
