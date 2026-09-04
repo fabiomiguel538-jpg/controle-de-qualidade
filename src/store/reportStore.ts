@@ -78,9 +78,16 @@ export const useReportStore = create<ReportState>()(
           boxWeights: [],
           processChecks: [],
           defects: [],
+          productChange: {
+            hasChange: false,
+            time: '',
+            newReference: '',
+            newFormat: '',
+            observation: ''
+          },
           productionLosses: {
             granel: 0,
-            granelUnit: 'm²',
+            granelUnit: 'paletes',
             caixasRasgadas: 0,
             repasses: 0,
             cacambaCaco: 0,

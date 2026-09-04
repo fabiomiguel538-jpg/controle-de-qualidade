@@ -1244,7 +1244,7 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
   const renderLossesSection = () => {
     const losses = report.productionLosses || {
       granel: 0,
-      granelUnit: 'm²',
+      granelUnit: 'paletes',
       caixasRasgadas: 0,
       repasses: 0,
       cacambaCaco: 0,
@@ -1337,7 +1337,7 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
     };
 
     const typeLabels: Record<string, { label: string; unit: string; color: string }> = {
-      granel: { label: 'Granel', unit: losses.granelUnit || 'm²', color: 'bg-amber-100 text-amber-900 border-amber-300' },
+      granel: { label: 'Granel', unit: losses.granelUnit || 'paletes', color: 'bg-amber-100 text-amber-900 border-amber-300' },
       caixas_rasgadas: { label: 'Caixas Rasgadas', unit: 'cx', color: 'bg-rose-100 text-rose-900 border-rose-300' },
       repasses: { label: 'Repasses', unit: 'pç/cx', color: 'bg-blue-100 text-blue-900 border-blue-300' },
       cacamba_caco: { label: 'Caçamba de Caco', unit: 'caçambas', color: 'bg-purple-100 text-purple-900 border-purple-300' },
@@ -1381,20 +1381,23 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
                     <div className="p-1.5 rounded-md bg-amber-100 text-amber-800">
                       <Package size={15} />
                     </div>
-                    <span className="font-bold text-xs text-neutral-800">Granel</span>
+                    <div>
+                      <span className="font-bold text-xs text-neutral-800 block leading-tight">Granel</span>
+                      <span className="text-[9px] text-amber-700 font-semibold leading-none">Nº de Paletes</span>
+                    </div>
                   </div>
                   {/* Seletor de unidade */}
                   <select
-                    value={losses.granelUnit || 'm²'}
+                    value={losses.granelUnit || 'paletes'}
                     onChange={(e) => updateLosses({ granelUnit: e.target.value })}
                     disabled={isLocked}
                     className="text-[10px] font-bold bg-white border border-amber-300 text-amber-900 rounded px-1.5 py-0.5 outline-none"
                     title="Unidade do Granel"
                   >
+                    <option value="paletes">paletes</option>
                     <option value="m²">m²</option>
                     <option value="cx">cx</option>
                     <option value="pç">pç</option>
-                    <option value="palete">palete</option>
                   </select>
                 </div>
 
@@ -1410,7 +1413,7 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
                     className="w-full text-center text-2xl font-black text-amber-950 bg-white py-1 px-2 border-2 border-amber-300 rounded-lg focus:border-amber-500 outline-none shadow-inner"
                   />
                   <span className="block text-center text-[10px] font-semibold text-neutral-400 mt-1">
-                    Total em {losses.granelUnit || 'm²'}
+                    Número de {losses.granelUnit || 'paletes'}
                   </span>
                 </div>
               </div>
@@ -1441,17 +1444,17 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleAdjustLoss('granel', 5)}
+                    onClick={() => handleAdjustLoss('granel', 2)}
                     className="px-1.5 py-1 text-[10px] font-bold bg-amber-600 hover:bg-amber-700 text-white rounded active:scale-95 transition-all"
                   >
-                    +5
+                    +2
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleAdjustLoss('granel', 10)}
+                    onClick={() => handleAdjustLoss('granel', 5)}
                     className="px-1.5 py-1 text-[10px] font-bold bg-amber-700 hover:bg-amber-800 text-white rounded active:scale-95 transition-all"
                   >
-                    +10
+                    +5
                   </button>
                 </div>
               )}
@@ -2035,8 +2038,140 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
                     onChange={e => update({ reference: e.target.value })}
                     disabled={isLocked}
                     className="w-full py-1.5 px-2 bg-neutral-50 border border-neutral-200 rounded-lg text-xs font-medium focus:ring-1 focus:ring-orange-500 outline-none"
-                    placeholder="Código do produto"
+                    placeholder="Código do produto atual"
                   />
+                </div>
+
+                {/* SEÇÃO: TROCA COM ESPAÇO PARA REFERÊNCIA DO PRODUTO NOVO */}
+                <div className="sm:col-span-2 mt-1 pt-3 border-t border-neutral-200">
+                  <div className="bg-gradient-to-r from-amber-50/80 via-orange-50/40 to-white p-3 rounded-xl border-2 border-amber-300 shadow-2xs">
+                    <div className="flex flex-wrap items-center justify-between gap-1.5 mb-2.5 pb-2 border-b border-amber-200">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-md bg-amber-600 text-white flex items-center justify-center shadow-2xs">
+                          <RotateCcw size={13} />
+                        </div>
+                        <div>
+                          <span className="font-black text-xs text-amber-950 uppercase tracking-wide">Troca</span>
+                          <span className="text-[11px] text-amber-800 ml-1.5 font-medium">Troca de produto no turno</span>
+                        </div>
+                      </div>
+                      {report.productChange?.newReference ? (
+                        <span className="text-[10px] font-bold bg-amber-200 text-amber-900 border border-amber-400 px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <Check size={11} className="stroke-[3]" /> Troca Informada
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-neutral-400 italic">
+                          (Preencha se houver troca de produto durante o turno)
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                      <div className="sm:col-span-6">
+                        <label className="block text-xs font-bold text-neutral-800 mb-1">
+                          Referência do Produto Novo: *
+                        </label>
+                        <input 
+                          type="text" 
+                          value={report.productChange?.newReference || ''} 
+                          onChange={e => update({ 
+                            productChange: {
+                              ...(report.productChange || {}),
+                              hasChange: Boolean(e.target.value.trim()),
+                              newReference: e.target.value
+                            } 
+                          })}
+                          disabled={isLocked}
+                          className="w-full py-2 px-3 bg-white border-2 border-amber-400 rounded-lg text-xs font-bold text-neutral-900 placeholder:text-neutral-400 placeholder:font-normal focus:border-amber-600 focus:ring-2 focus:ring-amber-200 outline-none shadow-xs"
+                          placeholder="Digite a referência do produto novo..."
+                        />
+                      </div>
+
+                      <div className="sm:col-span-3">
+                        <label className="block text-xs font-semibold text-neutral-700 mb-1">
+                          Horário da Troca
+                        </label>
+                        <TimeInput
+                          value={report.productChange?.time || ''}
+                          onChange={(newTime) => update({
+                            productChange: {
+                              ...(report.productChange || { newReference: '' }),
+                              time: newTime
+                            }
+                          })}
+                          disabled={isLocked}
+                          shift={report.shift}
+                          className="py-1.5 px-2 text-xs font-bold"
+                          label="Horário da Troca"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-3">
+                        <label className="block text-xs font-semibold text-neutral-700 mb-1">
+                          Formato Novo
+                        </label>
+                        <input 
+                          type="text" 
+                          value={report.productChange?.newFormat || ''} 
+                          onChange={e => update({ 
+                            productChange: {
+                              ...(report.productChange || { newReference: '' }),
+                              newFormat: e.target.value
+                            } 
+                          })}
+                          disabled={isLocked}
+                          className="w-full py-2 px-2 bg-white border border-neutral-300 rounded-lg text-xs font-medium focus:border-amber-500 outline-none"
+                          placeholder="Ex: 60x60"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-12">
+                        <label className="block text-[11px] font-semibold text-neutral-600 mb-0.5">
+                          Observação da Troca (Opcional):
+                        </label>
+                        <input 
+                          type="text" 
+                          value={report.productChange?.observation || ''} 
+                          onChange={e => update({ 
+                            productChange: {
+                              ...(report.productChange || { newReference: '' }),
+                              observation: e.target.value
+                            } 
+                          })}
+                          disabled={isLocked}
+                          className="w-full py-1.5 px-2.5 bg-white border border-neutral-200 rounded-lg text-xs outline-none focus:border-amber-500 placeholder:text-neutral-400"
+                          placeholder="Ex: Início da produção da referência nova, troca de punção realizada..."
+                        />
+                      </div>
+                    </div>
+
+                    {report.productChange?.newReference && (
+                      <div className="mt-2.5 pt-2 border-t border-amber-200 flex flex-wrap items-center justify-between gap-1.5 text-xs">
+                        <span className="text-amber-950 font-medium">
+                          Produto Novo Registrado: <strong className="font-black text-amber-900">{report.productChange.newReference}</strong>
+                          {report.productChange.time && <span className="text-amber-800"> às {report.productChange.time}</span>}
+                          {report.productChange.newFormat && <span className="text-neutral-600"> ({report.productChange.newFormat})</span>}
+                        </span>
+                        {!isLocked && (
+                          <button
+                            type="button"
+                            onClick={() => update({
+                              productChange: {
+                                hasChange: false,
+                                newReference: '',
+                                time: '',
+                                newFormat: '',
+                                observation: ''
+                              }
+                            })}
+                            className="text-neutral-500 hover:text-red-600 text-[11px] font-semibold underline flex items-center gap-1 active:scale-95"
+                          >
+                            <Eraser size={11} /> Limpar Troca
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -2835,6 +2970,18 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
                   <span className="font-semibold text-neutral-500">Produto</span>
                   <span className="font-bold">{report.format} / {report.reference}</span>
                 </div>
+                {report.productChange?.newReference && (
+                  <div className="flex justify-between items-center py-1.5 px-2 bg-amber-50 rounded-lg border border-amber-200">
+                    <span className="font-bold text-amber-900 text-xs flex items-center gap-1">
+                      <RotateCcw size={12} className="text-amber-700" /> Troca de Produto:
+                    </span>
+                    <span className="font-black text-xs text-amber-950">
+                      {report.productChange.newReference}
+                      {report.productChange.time && <span className="font-semibold text-amber-800"> ({report.productChange.time})</span>}
+                      {report.productChange.newFormat && <span className="font-normal text-neutral-600"> • {report.productChange.newFormat}</span>}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between py-1.5">
                   <span className="font-semibold text-neutral-500">Total Defeitos</span>
                   <span className="font-bold text-red-600">{report.defects.reduce((acc, d) => acc + d.quantity, 0)}</span>
@@ -2845,7 +2992,7 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
                     <div className="grid grid-cols-2 gap-1.5 text-[11px]">
                       <div className="bg-amber-50/70 p-1.5 rounded border border-amber-200">
                         <span className="text-amber-800/80 block text-[10px]">Granel:</span>
-                        <strong className="text-amber-950 font-bold">{report.productionLosses.granel || 0} {report.productionLosses.granelUnit || 'm²'}</strong>
+                        <strong className="text-amber-950 font-bold">{report.productionLosses.granel || 0} {report.productionLosses.granelUnit || 'paletes'}</strong>
                       </div>
                       <div className="bg-rose-50/70 p-1.5 rounded border border-rose-200">
                         <span className="text-rose-800/80 block text-[10px]">Caixas Rasgadas:</span>

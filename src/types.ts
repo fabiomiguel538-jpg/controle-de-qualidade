@@ -13,9 +13,17 @@ export interface ProductionLossEntry {
   observation?: string;
 }
 
+export interface ProductChangeInfo {
+  hasChange?: boolean;
+  time?: string;
+  newReference: string;
+  newFormat?: string;
+  observation?: string;
+}
+
 export interface ProductionLosses {
-  granel: number;              // Granel
-  granelUnit?: string;         // 'm²', 'cx', 'pç'
+  granel: number;              // Granel (paletes)
+  granelUnit?: string;         // 'paletes', 'm²', 'cx', 'pç'
   caixasRasgadas: number;      // Caixas rasgadas
   repasses: number;            // Repasses
   cacambaCaco: number;         // Caçamba de caco
@@ -31,6 +39,7 @@ export interface Report {
   leaderName: string;
   format: string;
   reference: string;
+  productChange?: ProductChangeInfo;
   status: ReportStatus;
   userId?: string;
   createdBy?: string;

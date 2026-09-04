@@ -21,8 +21,20 @@ export const generatePDF = (report: Report) => {
   doc.text(`Formato: ${report.format}`, 14, 35);
   doc.text(`Referência: ${report.reference}`, 100, 35);
 
-  // Espessura
   let nextY = 45;
+  if (report.productChange?.newReference) {
+    const pc = report.productChange;
+    let changeText = `TROCA: Ref. Nova ${pc.newReference}`;
+    if (pc.time) changeText += ` às ${pc.time}`;
+    if (pc.newFormat) changeText += ` (Formato: ${pc.newFormat})`;
+    doc.setFontSize(9);
+    doc.setTextColor(190, 75, 0);
+    doc.text(changeText, 14, 41);
+    doc.setTextColor(0, 0, 0);
+    nextY = 49;
+  }
+
+  // Espessura
   if (report.thickness.length > 0) {
     doc.text('1. CONTROLE DE ESPESSURA (3 PEÇAS/HORA)', 14, nextY);
     autoTable(doc, {
@@ -184,7 +196,7 @@ export const generatePDF = (report: Report) => {
     }
     doc.text('9. CONTROLE DE GRANEL, REPASSES E DESCARTES', 14, nextY);
     const body: string[][] = [
-      ['Granel', `${losses.granel || 0} ${losses.granelUnit || 'm²'}`],
+      ['Granel', `${losses.granel || 0} ${losses.granelUnit || 'paletes'}`],
       ['Caixas Rasgadas', `${losses.caixasRasgadas || 0} cx`],
       ['Repasses', `${losses.repasses || 0}`],
       ['Caçamba de Caco', `${losses.cacambaCaco || 0} caçamba(s)`]
