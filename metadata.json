@@ -1,6 +1,6 @@
 {
   "name": "Controle Estatístico de Defeitos Visuais – Cerâmica",
-  "description": "Aplicativo para líder de produção registrar relatório diário de Controle Estatístico de Defeitos Visuais, gerando PDF final estruturado.",
+  "description": "Plataforma industrial para a Viva Cerâmica com módulos de Controle de Produção, Inspeção Estatística de Defeitos e Painel da Manutenção Mecânica com gestão de durabilidade de peças.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

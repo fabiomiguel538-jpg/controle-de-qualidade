@@ -60,8 +60,9 @@ export async function initDatabase() {
   try {
     await client.query('BEGIN');
 
-    // Enable UUID extension
+    // Enable UUID extension and pgcrypto
     await client.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`);
+    await client.query(`CREATE EXTENSION IF NOT EXISTS "pgcrypto";`);
 
     // 1. users
     await client.query(`
@@ -74,6 +75,31 @@ export async function initDatabase() {
         active BOOLEAN DEFAULT TRUE,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // 1b. maintenance_replacements
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS maintenance_replacements (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        sector VARCHAR(100) NOT NULL,
+        machine VARCHAR(100) NOT NULL,
+        component_name VARCHAR(150) NOT NULL,
+        replacement_date DATE DEFAULT CURRENT_DATE,
+        mechanic_name VARCHAR(100) NOT NULL,
+        lifespan_days INTEGER NOT NULL,
+        alert_lead_days INTEGER DEFAULT 7,
+        notes TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // 1c. maintenance_sectors
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS maintenance_sectors (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name VARCHAR(100) UNIQUE NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
@@ -278,6 +304,7 @@ export async function initDatabase() {
     console.log('Checking and seeding users...');
     const usersToSeed = [
       { name: 'Administrador', email: 'admin', pass: '741741', role: 'ADMIN' },
+      { name: 'Mecânico 1', email: 'mecanico1', pass: '741741', role: 'mechanic' },
       { name: 'Líder Matriz 1', email: 'lidermatriz1', pass: 'lider1', role: 'LIDER' },
       { name: 'Líder Matriz 2', email: 'lidermatriz2', pass: 'lider2', role: 'LIDER' },
       { name: 'Líder Matriz 3', email: 'lidermatriz3', pass: 'lider3', role: 'LIDER' },
@@ -295,6 +322,15 @@ export async function initDatabase() {
         );
         console.log(`User seeded: ${u.email}`);
       }
+    }
+
+    // Seed default maintenance sectors
+    const defaultSectors = ['Prensas', 'Linha de Esmaltação', 'Forno', 'Retífica'];
+    for (const sec of defaultSectors) {
+      await client.query(
+        `INSERT INTO maintenance_sectors (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`,
+        [sec]
+      );
     }
 
     await client.query('COMMIT');

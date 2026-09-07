@@ -1,5 +1,19 @@
 export type ReportStatus = 'EM_ANDAMENTO' | 'FINALIZADO';
 
+export interface MaintenanceReplacement {
+  id: string;
+  sector: 'Prensas' | 'Linha de Esmaltação' | 'Forno' | 'Retífica' | string;
+  machine: string;
+  component_name: string;
+  replacement_date: string; // YYYY-MM-DD
+  mechanic_name: string;
+  lifespan_days: number;
+  alert_lead_days: number;
+  notes?: string;
+  created_at?: string;
+  syncStatus?: 'synced' | 'pending';
+}
+
 export interface Defect {
   code: number;
   name: string;

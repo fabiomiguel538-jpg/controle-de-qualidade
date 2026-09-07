@@ -347,6 +347,176 @@ async function startServer() {
     }
   });
 
+  // --- Maintenance Module APIs ---
+  app.get('/api/maintenance/replacements', async (req, res) => {
+    if (!process.env.DATABASE_URL) {
+      return res.status(503).json({ error: 'Banco de dados não configurado.' });
+    }
+    try {
+      const result = await query(
+        'SELECT * FROM maintenance_replacements ORDER BY replacement_date DESC, created_at DESC'
+      );
+      const rows = result.rows.map((r: any) => ({
+        id: r.id,
+        sector: r.sector,
+        machine: r.machine,
+        component_name: r.component_name,
+        replacement_date: r.replacement_date ? new Date(r.replacement_date).toISOString().split('T')[0] : '',
+        mechanic_name: r.mechanic_name,
+        lifespan_days: r.lifespan_days,
+        alert_lead_days: r.alert_lead_days,
+        notes: r.notes,
+        created_at: r.created_at,
+        syncStatus: 'synced',
+      }));
+      res.json(rows);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/maintenance/replacements', async (req, res) => {
+    if (!process.env.DATABASE_URL) {
+      return res.status(503).json({ error: 'Banco de dados não configurado.' });
+    }
+    try {
+      const {
+        id,
+        sector,
+        machine,
+        component_name,
+        replacement_date,
+        mechanic_name,
+        lifespan_days,
+        alert_lead_days,
+        notes
+      } = req.body;
+
+      await query(
+        `INSERT INTO maintenance_replacements 
+         (id, sector, machine, component_name, replacement_date, mechanic_name, lifespan_days, alert_lead_days, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (id) DO UPDATE SET
+           sector = EXCLUDED.sector,
+           machine = EXCLUDED.machine,
+           component_name = EXCLUDED.component_name,
+           replacement_date = EXCLUDED.replacement_date,
+           mechanic_name = EXCLUDED.mechanic_name,
+           lifespan_days = EXCLUDED.lifespan_days,
+           alert_lead_days = EXCLUDED.alert_lead_days,
+           notes = EXCLUDED.notes`,
+        [
+          id,
+          sector,
+          machine,
+          component_name,
+          replacement_date,
+          mechanic_name,
+          lifespan_days,
+          alert_lead_days || 7,
+          notes || ''
+        ]
+      );
+
+      res.json({ success: true, id, syncStatus: 'synced' });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete('/api/maintenance/replacements/:id', async (req, res) => {
+    if (!process.env.DATABASE_URL) {
+      return res.status(503).json({ error: 'Banco de dados não configurado.' });
+    }
+    try {
+      const { id } = req.params;
+      await query('DELETE FROM maintenance_replacements WHERE id = $1', [id]);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // --- Maintenance Sectors APIs ---
+  app.get('/api/maintenance/sectors', async (req, res) => {
+    if (!process.env.DATABASE_URL) {
+      return res.json(['Prensas', 'Linha de Esmaltação', 'Forno', 'Retífica']);
+    }
+    try {
+      // Create table if not exists
+      await query(`
+        CREATE TABLE IF NOT EXISTS maintenance_sectors (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          name VARCHAR(100) UNIQUE NOT NULL,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+
+      const result = await query('SELECT name FROM maintenance_sectors ORDER BY created_at ASC, name ASC');
+      if (result.rows.length === 0) {
+        // Seed default
+        const defaultSectors = ['Prensas', 'Linha de Esmaltação', 'Forno', 'Retífica'];
+        for (const sec of defaultSectors) {
+          await query('INSERT INTO maintenance_sectors (name) VALUES ($1) ON CONFLICT (name) DO NOTHING', [sec]);
+        }
+        return res.json(defaultSectors);
+      }
+      res.json(result.rows.map((r: any) => r.name));
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/maintenance/sectors', async (req, res) => {
+    if (!process.env.DATABASE_URL) {
+      return res.json({ success: true, name: req.body.name });
+    }
+    try {
+      const { name } = req.body;
+      if (!name || typeof name !== 'string' || !name.trim()) {
+        return res.status(400).json({ error: 'Nome do setor obrigatório' });
+      }
+      const trimmed = name.trim();
+      await query('INSERT INTO maintenance_sectors (name) VALUES ($1) ON CONFLICT (name) DO NOTHING', [trimmed]);
+      res.json({ success: true, name: trimmed });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.put('/api/maintenance/sectors/rename', async (req, res) => {
+    if (!process.env.DATABASE_URL) {
+      return res.json({ success: true, oldName: req.body.oldName, newName: req.body.newName });
+    }
+    try {
+      const { oldName, newName } = req.body;
+      if (!oldName || !newName || !newName.trim()) {
+        return res.status(400).json({ error: 'Nomes inválidos' });
+      }
+      const trimmedNew = newName.trim();
+      // Update sector name in sectors table
+      await query('UPDATE maintenance_sectors SET name = $1 WHERE name = $2', [trimmedNew, oldName]);
+      // Update sector name in all replacements records!
+      await query('UPDATE maintenance_replacements SET sector = $1 WHERE sector = $2', [trimmedNew, oldName]);
+      res.json({ success: true, oldName, newName: trimmedNew });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete('/api/maintenance/sectors/:name', async (req, res) => {
+    if (!process.env.DATABASE_URL) {
+      return res.json({ success: true });
+    }
+    try {
+      const { name } = req.params;
+      await query('DELETE FROM maintenance_sectors WHERE name = $1', [decodeURIComponent(name)]);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // --- Vite Middleware ---
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
