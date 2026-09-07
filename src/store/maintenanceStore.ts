@@ -181,17 +181,20 @@ export const useMaintenanceStore = create<MaintenanceState>()(
           if (res.ok) {
             set((state) => ({
               cloudConnected: true,
-              lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
               replacements: state.replacements.map((r) =>
                 r.id === id ? { ...r, syncStatus: 'synced' } : r
               ),
             }));
             return true;
+          } else {
+            set({ cloudConnected: false });
+            return false;
           }
         } catch {
           set({ cloudConnected: false });
+          return false;
         }
-        return false;
       },
 
       deleteReplacement: async (id) => {
@@ -200,11 +203,18 @@ export const useMaintenanceStore = create<MaintenanceState>()(
         }));
 
         try {
-          await fetch(`/api/maintenance/replacements/${id}`, { method: 'DELETE' });
-          return true;
+          const res = await fetch(`/api/maintenance/replacements/${id}`, { method: 'DELETE' });
+          if (res.ok) {
+            set({
+              cloudConnected: true,
+              lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            });
+            return true;
+          }
         } catch {
-          return true;
+          // Fallback offline
         }
+        return true;
       },
 
       fetchReplacements: async () => {
@@ -213,12 +223,12 @@ export const useMaintenanceStore = create<MaintenanceState>()(
           const res = await fetch('/api/maintenance/replacements');
           if (res.ok) {
             const data = await res.json();
-            if (Array.isArray(data) && data.length > 0) {
+            if (Array.isArray(data)) {
               set({
                 replacements: data,
                 cloudConnected: true,
                 isSyncing: false,
-                lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
               });
               return;
             }

@@ -68,6 +68,7 @@ export default function MaintenanceDashboard() {
     replacements,
     sectors,
     addReplacement,
+    updateReplacement,
     deleteReplacement,
     isSyncing,
     cloudConnected,
@@ -84,6 +85,7 @@ export default function MaintenanceDashboard() {
   const [selectedSector, setSelectedSector] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingReplacementId, setEditingReplacementId] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState<string | null>(null);
 
   // Sector Management Modal State
@@ -109,9 +111,29 @@ export default function MaintenanceDashboard() {
   const [formError, setFormError] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Sincronização em tempo real multi-dispositivo (polling a cada 8s e evento de foco)
   useEffect(() => {
     fetchReplacements();
     fetchSectors();
+
+    const interval = setInterval(() => {
+      fetchReplacements();
+      fetchSectors();
+    }, 8000);
+
+    const handleFocus = () => {
+      fetchReplacements();
+      fetchSectors();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('online', handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('online', handleFocus);
+    };
   }, [fetchReplacements, fetchSectors]);
 
   // Keep formSector in sync if sectors change and current formSector is not in list
@@ -129,6 +151,7 @@ export default function MaintenanceDashboard() {
   const handleOpenNewModal = (prefill?: Partial<MaintenanceReplacement>) => {
     setIsAddingNewSectorInline(false);
     setInlineNewSector('');
+    setEditingReplacementId(null);
     if (prefill) {
       setFormSector(prefill.sector || sectors[0] || 'Prensas');
       setFormMachine(prefill.machine || '');
@@ -145,6 +168,21 @@ export default function MaintenanceDashboard() {
       setFormNotes('');
     }
     setFormDate(getTodayString());
+    setFormError('');
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEditModal = (item: MaintenanceReplacement) => {
+    setIsAddingNewSectorInline(false);
+    setInlineNewSector('');
+    setEditingReplacementId(item.id);
+    setFormSector(item.sector);
+    setFormMachine(item.machine);
+    setFormComponentName(item.component_name);
+    setFormDate(item.replacement_date);
+    setFormLifespan(item.lifespan_days);
+    setFormAlertLead(item.alert_lead_days);
+    setFormNotes(item.notes || '');
     setFormError('');
     setIsModalOpen(true);
   };
@@ -248,21 +286,35 @@ export default function MaintenanceDashboard() {
     setFormError('');
 
     try {
-      await addReplacement({
-        sector: formSector,
-        machine: formMachine.trim(),
-        component_name: formComponentName.trim(),
-        replacement_date: formDate,
-        mechanic_name: user?.name || 'Mecânico 1',
-        lifespan_days: Number(formLifespan),
-        alert_lead_days: Number(formAlertLead) || 7,
-        notes: formNotes.trim(),
-      });
+      if (editingReplacementId) {
+        await updateReplacement(editingReplacementId, {
+          sector: formSector,
+          machine: formMachine.trim(),
+          component_name: formComponentName.trim(),
+          replacement_date: formDate,
+          lifespan_days: Number(formLifespan),
+          alert_lead_days: Number(formAlertLead) || 7,
+          notes: formNotes.trim(),
+        });
+        showToast(`Componente "${formComponentName.trim()}" atualizado com sucesso!`);
+      } else {
+        await addReplacement({
+          sector: formSector,
+          machine: formMachine.trim(),
+          component_name: formComponentName.trim(),
+          replacement_date: formDate,
+          mechanic_name: user?.name || 'Mecânico 1',
+          lifespan_days: Number(formLifespan),
+          alert_lead_days: Number(formAlertLead) || 7,
+          notes: formNotes.trim(),
+        });
+        showToast('Nova troca de componente registrada com sucesso!');
+      }
 
       setIsModalOpen(false);
-      showToast('Nova troca de componente registrada com sucesso!');
+      setEditingReplacementId(null);
     } catch (err: any) {
-      setFormError('Erro ao salvar. Verifique os dados.');
+      setFormError('Erro ao salvar no banco online. Verifique a conexão.');
     } finally {
       setIsSubmitting(false);
     }
@@ -409,22 +461,31 @@ export default function MaintenanceDashboard() {
                   <span>{user?.name || 'Mecânico'}</span>
                 </span>
 
-                <div
-                  className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-neutral-800 text-[11px] font-semibold text-neutral-400 border border-neutral-700"
-                  title={cloudConnected ? 'Conectado à nuvem (Neon DB / Online)' : 'Operando em cache local offline'}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await Promise.all([fetchReplacements(), fetchSectors(), syncPendingReplacements()]);
+                    showToast('Painel sincronizado com a nuvem!');
+                  }}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all cursor-pointer ${
+                    cloudConnected
+                      ? 'bg-emerald-950/40 text-emerald-300 border-emerald-800/60 hover:bg-emerald-900/50'
+                      : 'bg-amber-950/40 text-amber-300 border-amber-800/60 hover:bg-amber-900/50'
+                  }`}
+                  title="Clique para sincronizar agora com o banco de dados online (Neon DB)"
                 >
-                  {cloudConnected ? (
-                    <>
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      <span className="text-emerald-400">Online</span>
-                    </>
-                  ) : (
-                    <>
-                      <WifiOff size={11} className="text-amber-400" />
-                      <span className="text-amber-400">Offline (Local)</span>
-                    </>
-                  )}
-                </div>
+                  <RefreshCw
+                    size={11}
+                    className={`${isSyncing ? 'animate-spin text-orange-400' : cloudConnected ? 'text-emerald-400' : 'text-amber-400'}`}
+                  />
+                  <span>
+                    {isSyncing
+                      ? 'Sincronizando...'
+                      : cloudConnected
+                      ? `Online (Nuvem) • ${lastSyncedAt || 'Ao vivo'}`
+                      : 'Offline • Reconectar'}
+                  </span>
+                </button>
               </div>
 
               <button
@@ -441,7 +502,27 @@ export default function MaintenanceDashboard() {
       </header>
 
       {/* Main Container */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 pt-6">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 pt-5">
+        {/* Real-time Multi-Device Sync Ribbon */}
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 mb-5 bg-neutral-900/60 border border-neutral-800/80 rounded-xl text-xs text-neutral-400">
+          <div className="flex items-center gap-2">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span className="text-neutral-300 font-semibold">
+              Sincronização Online Ativa
+            </span>
+            <span className="hidden md:inline text-neutral-600">•</span>
+            <span className="hidden md:inline text-neutral-400">
+              Alterações feitas no celular, tablet ou computador salvam diretamente no banco online (Neon DB) e atualizam em tempo real em todas as telas.
+            </span>
+          </div>
+          <div className="flex items-center gap-2 ml-auto text-[11px] text-neutral-400">
+            <span>Última sincronia: <strong className="text-emerald-400 font-mono">{lastSyncedAt || 'Ao vivo'}</strong></span>
+          </div>
+        </div>
+
         {/* KPI Summary Cards */}
         <section className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           {/* Total */}
@@ -751,6 +832,16 @@ export default function MaintenanceDashboard() {
                   <div className="pt-3 border-t border-neutral-800/80 flex items-center gap-2">
                     <button
                       type="button"
+                      onClick={() => handleOpenEditModal(item)}
+                      className="py-2 px-2.5 bg-neutral-800 hover:bg-neutral-750 hover:border-neutral-600 text-neutral-200 hover:text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5 active:scale-95 border border-neutral-700/80"
+                      title="Editar informações deste componente (máquina, durabilidade, etc.)"
+                    >
+                      <Edit2 size={13} className="text-amber-400" />
+                      <span>Editar</span>
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={() => handleOpenNewModal(item)}
                       className="flex-1 py-2 px-3 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5 active:scale-95"
                       title="Registrar que esta peça foi trocada novamente hoje"
@@ -783,14 +874,16 @@ export default function MaintenanceDashboard() {
             <div className="p-4 sm:p-5 border-b border-neutral-800 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-orange-500/10 border border-orange-500/30 flex items-center justify-center text-orange-400">
-                  <Wrench size={18} />
+                  {editingReplacementId ? <Edit2 size={18} /> : <Wrench size={18} />}
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-neutral-100">
-                    Registrar Troca de Peça
+                    {editingReplacementId ? 'Editar Informações do Componente' : 'Registrar Troca de Peça'}
                   </h3>
                   <p className="text-xs text-neutral-400">
-                    Insira os dados técnicos para monitorar a durabilidade
+                    {editingReplacementId
+                      ? 'Altere máquina, durabilidade ou notas (sincroniza online)'
+                      : 'Insira os dados técnicos para monitorar a durabilidade'}
                   </p>
                 </div>
               </div>
@@ -987,11 +1080,11 @@ export default function MaintenanceDashboard() {
                   className="py-2.5 px-5 bg-orange-500 hover:bg-orange-600 text-neutral-950 font-black text-xs sm:text-sm rounded-xl shadow-lg transition-all active:scale-95 disabled:opacity-50 flex items-center gap-1.5"
                 >
                   {isSubmitting ? (
-                    <span>Salvando...</span>
+                    <span>Salvando na nuvem...</span>
                   ) : (
                     <>
                       <CheckCircle2 size={16} />
-                      <span>Salvar Registro de Troca</span>
+                      <span>{editingReplacementId ? 'Salvar Alterações (Nuvem)' : 'Salvar Registro de Troca'}</span>
                     </>
                   )}
                 </button>

@@ -81,7 +81,7 @@ export async function initDatabase() {
     // 1b. maintenance_replacements
     await client.query(`
       CREATE TABLE IF NOT EXISTS maintenance_replacements (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        id VARCHAR(255) PRIMARY KEY,
         sector VARCHAR(100) NOT NULL,
         machine VARCHAR(100) NOT NULL,
         component_name VARCHAR(150) NOT NULL,
@@ -94,10 +94,20 @@ export async function initDatabase() {
       );
     `);
 
+    // Ensure id column is VARCHAR(255) in case it was created as UUID earlier
+    await client.query(`
+      DO $$
+      BEGIN
+        ALTER TABLE maintenance_replacements ALTER COLUMN id TYPE VARCHAR(255);
+      EXCEPTION
+        WHEN OTHERS THEN NULL;
+      END $$;
+    `);
+
     // 1c. maintenance_sectors
     await client.query(`
       CREATE TABLE IF NOT EXISTS maintenance_sectors (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        id VARCHAR(255) PRIMARY KEY DEFAULT gen_random_uuid(),
         name VARCHAR(100) UNIQUE NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
@@ -331,6 +341,106 @@ export async function initDatabase() {
         `INSERT INTO maintenance_sectors (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`,
         [sec]
       );
+    }
+
+    // Seed default maintenance replacements if table has fewer than 2 items
+    const { rows: repCount } = await client.query('SELECT COUNT(*) FROM maintenance_replacements');
+    if (parseInt(repCount[0].count, 10) < 2) {
+      console.log('Seeding default maintenance replacements...');
+      const now = new Date();
+      const daysAgoDate = (days: number) => {
+        const d = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+        return d.toISOString().split('T')[0];
+      };
+
+      const defaultReplacements = [
+        {
+          id: 'maint-seed-1',
+          sector: 'Prensas',
+          machine: 'Prensa 01',
+          component_name: 'Correia B-75 Exaustor de Pó',
+          replacement_date: daysAgoDate(54),
+          mechanic_name: 'Mecânico 1',
+          lifespan_days: 60,
+          alert_lead_days: 7,
+          notes: 'Correia trocada após vibração no exaustor de despoeiramento. Verificar tensão.',
+        },
+        {
+          id: 'maint-seed-2',
+          sector: 'Prensas',
+          machine: 'Prensa 02',
+          component_name: 'Rolamento 6205 DDU Polia Principal',
+          replacement_date: daysAgoDate(98),
+          mechanic_name: 'Mecânico 1',
+          lifespan_days: 90,
+          alert_lead_days: 10,
+          notes: 'Apresentou aquecimento na última inspeção térmica. Troca emergencial requerida.',
+        },
+        {
+          id: 'maint-seed-3',
+          sector: 'Linha de Esmaltação',
+          machine: 'Linha 02 - Esmaltação',
+          component_name: 'Bomba Diafragma Graco 1.5"',
+          replacement_date: daysAgoDate(15),
+          mechanic_name: 'Mecânico 1',
+          lifespan_days: 120,
+          alert_lead_days: 15,
+          notes: 'Substituição das esferas e diafragmas de PTFE. Pressão nominal 4.5 bar.',
+        },
+        {
+          id: 'maint-seed-4',
+          sector: 'Forno',
+          machine: 'Forno Contínuo 01',
+          component_name: 'Roletes Cerâmicos Zona de Queima (Mód. 14)',
+          replacement_date: daysAgoDate(176),
+          mechanic_name: 'Mecânico 1',
+          lifespan_days: 180,
+          alert_lead_days: 14,
+          notes: 'Roletes com acúmulo de esmalte e leve ovalização. Programar parada de turno.',
+        },
+        {
+          id: 'maint-seed-5',
+          sector: 'Retífica',
+          machine: 'Retificadora Linha 01',
+          component_name: 'Rebolo Diamantado Bisotador Grana 120',
+          replacement_date: daysAgoDate(35),
+          mechanic_name: 'Mecânico 1',
+          lifespan_days: 30,
+          alert_lead_days: 5,
+          notes: 'Rebolo atingiu espessura mínima de segurança. Necessário ajuste e troca imediata.',
+        },
+        {
+          id: 'maint-seed-6',
+          sector: 'Linha de Esmaltação',
+          machine: 'Campana 01',
+          component_name: 'Correia Dentada T10 da Campana',
+          replacement_date: daysAgoDate(8),
+          mechanic_name: 'Mecânico 1',
+          lifespan_days: 90,
+          alert_lead_days: 10,
+          notes: 'Alinhamento verificado com laser. Funcionamento perfeitamente suave.',
+        },
+      ];
+
+      for (const item of defaultReplacements) {
+        await client.query(
+          `INSERT INTO maintenance_replacements 
+           (id, sector, machine, component_name, replacement_date, mechanic_name, lifespan_days, alert_lead_days, notes)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           ON CONFLICT (id) DO NOTHING`,
+          [
+            item.id,
+            item.sector,
+            item.machine,
+            item.component_name,
+            item.replacement_date,
+            item.mechanic_name,
+            item.lifespan_days,
+            item.alert_lead_days,
+            item.notes,
+          ]
+        );
+      }
     }
 
     await client.query('COMMIT');

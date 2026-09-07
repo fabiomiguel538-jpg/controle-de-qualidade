@@ -348,6 +348,18 @@ async function startServer() {
   });
 
   // --- Maintenance Module APIs ---
+  const formatSqlDate = (d: any) => {
+    if (!d) return '';
+    if (typeof d === 'string') return d.substring(0, 10);
+    if (d instanceof Date) {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+    return String(d).substring(0, 10);
+  };
+
   app.get('/api/maintenance/replacements', async (req, res) => {
     if (!process.env.DATABASE_URL) {
       return res.status(503).json({ error: 'Banco de dados não configurado.' });
@@ -361,11 +373,11 @@ async function startServer() {
         sector: r.sector,
         machine: r.machine,
         component_name: r.component_name,
-        replacement_date: r.replacement_date ? new Date(r.replacement_date).toISOString().split('T')[0] : '',
+        replacement_date: formatSqlDate(r.replacement_date),
         mechanic_name: r.mechanic_name,
         lifespan_days: r.lifespan_days,
         alert_lead_days: r.alert_lead_days,
-        notes: r.notes,
+        notes: r.notes || '',
         created_at: r.created_at,
         syncStatus: 'synced',
       }));
@@ -415,6 +427,53 @@ async function startServer() {
           lifespan_days,
           alert_lead_days || 7,
           notes || ''
+        ]
+      );
+
+      res.json({ success: true, id, syncStatus: 'synced' });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.put('/api/maintenance/replacements/:id', async (req, res) => {
+    if (!process.env.DATABASE_URL) {
+      return res.status(503).json({ error: 'Banco de dados não configurado.' });
+    }
+    try {
+      const { id } = req.params;
+      const {
+        sector,
+        machine,
+        component_name,
+        replacement_date,
+        mechanic_name,
+        lifespan_days,
+        alert_lead_days,
+        notes
+      } = req.body;
+
+      await query(
+        `UPDATE maintenance_replacements SET
+           sector = COALESCE($1, sector),
+           machine = COALESCE($2, machine),
+           component_name = COALESCE($3, component_name),
+           replacement_date = COALESCE($4, replacement_date),
+           mechanic_name = COALESCE($5, mechanic_name),
+           lifespan_days = COALESCE($6, lifespan_days),
+           alert_lead_days = COALESCE($7, alert_lead_days),
+           notes = COALESCE($8, notes)
+         WHERE id = $9`,
+        [
+          sector,
+          machine,
+          component_name,
+          replacement_date,
+          mechanic_name,
+          lifespan_days,
+          alert_lead_days,
+          notes || '',
+          id
         ]
       );
 
