@@ -18,6 +18,17 @@ async function startServer() {
   app.use(express.json({ limit: '20mb' }));
   app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
+  // Disable HTTP caching for all dynamic API endpoints to ensure multi-device synchronization
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api/')) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      res.setHeader('Surrogate-Control', 'no-store');
+    }
+    next();
+  });
+
   // Wait for DB initialization (only warning if no DATABASE_URL, won't crash so UI can still load)
   if (process.env.DATABASE_URL) {
     await initDatabase();
@@ -347,7 +358,7 @@ async function startServer() {
     }
   });
 
-  // --- Maintenance Module APIs ---
+  // --- Maintenance Module APIs & Real-Time Sync ---
   const formatSqlDate = (d: any) => {
     if (!d) return '';
     if (typeof d === 'string') return d.substring(0, 10);
@@ -359,6 +370,47 @@ async function startServer() {
     }
     return String(d).substring(0, 10);
   };
+
+  // Real-Time Server-Sent Events (SSE) Bus for multi-device synchronization
+  const maintenanceClients = new Set<express.Response>();
+
+  const broadcastMaintenance = (payload: { type: string; id?: string; timestamp: number }) => {
+    const message = `data: ${JSON.stringify(payload)}\n\n`;
+    for (const client of maintenanceClients) {
+      try {
+        client.write(message);
+      } catch {
+        maintenanceClients.delete(client);
+      }
+    }
+  };
+
+  app.get('/api/maintenance/stream', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+
+    // Initial connection acknowledgment
+    res.write(`data: ${JSON.stringify({ type: 'CONNECTED', timestamp: Date.now() })}\n\n`);
+    maintenanceClients.add(res);
+
+    // Heartbeat every 15s to keep mobile connection alive
+    const keepAlive = setInterval(() => {
+      try {
+        res.write(': keepalive\n\n');
+      } catch {
+        clearInterval(keepAlive);
+        maintenanceClients.delete(res);
+      }
+    }, 15000);
+
+    req.on('close', () => {
+      clearInterval(keepAlive);
+      maintenanceClients.delete(res);
+    });
+  });
 
   app.get('/api/maintenance/replacements', async (req, res) => {
     if (!process.env.DATABASE_URL) {
@@ -375,8 +427,8 @@ async function startServer() {
         component_name: r.component_name,
         replacement_date: formatSqlDate(r.replacement_date),
         mechanic_name: r.mechanic_name,
-        lifespan_days: r.lifespan_days,
-        alert_lead_days: r.alert_lead_days,
+        lifespan_days: Number(r.lifespan_days) || 60,
+        alert_lead_days: Number(r.alert_lead_days) || 7,
         notes: r.notes || '',
         created_at: r.created_at,
         syncStatus: 'synced',
@@ -404,6 +456,13 @@ async function startServer() {
         notes
       } = req.body;
 
+      const recordId = (id && String(id).trim()) || `maint-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+      const cleanDate = typeof replacement_date === 'string' && replacement_date.trim().length >= 10
+        ? replacement_date.trim().substring(0, 10)
+        : new Date().toISOString().split('T')[0];
+      const cleanLifespan = parseInt(String(lifespan_days), 10) || 60;
+      const cleanAlert = parseInt(String(alert_lead_days), 10) || 7;
+
       await query(
         `INSERT INTO maintenance_replacements 
          (id, sector, machine, component_name, replacement_date, mechanic_name, lifespan_days, alert_lead_days, notes)
@@ -418,19 +477,22 @@ async function startServer() {
            alert_lead_days = EXCLUDED.alert_lead_days,
            notes = EXCLUDED.notes`,
         [
-          id,
-          sector,
-          machine,
-          component_name,
-          replacement_date,
-          mechanic_name,
-          lifespan_days,
-          alert_lead_days || 7,
+          recordId,
+          sector || 'Prensas',
+          machine || '',
+          component_name || '',
+          cleanDate,
+          mechanic_name || 'Mecânico 1',
+          cleanLifespan,
+          cleanAlert,
           notes || ''
         ]
       );
 
-      res.json({ success: true, id, syncStatus: 'synced' });
+      // Broadcast update to all other connected screens in real-time
+      broadcastMaintenance({ type: 'REPLACEMENT_SAVED', id: recordId, timestamp: Date.now() });
+
+      res.json({ success: true, id: recordId, syncStatus: 'synced' });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -453,6 +515,12 @@ async function startServer() {
         notes
       } = req.body;
 
+      const cleanDate = typeof replacement_date === 'string' && replacement_date.trim().length >= 10
+        ? replacement_date.trim().substring(0, 10)
+        : null;
+      const cleanLifespan = lifespan_days !== undefined ? (parseInt(String(lifespan_days), 10) || 60) : null;
+      const cleanAlert = alert_lead_days !== undefined ? (parseInt(String(alert_lead_days), 10) || 7) : null;
+
       await query(
         `UPDATE maintenance_replacements SET
            sector = COALESCE($1, sector),
@@ -468,14 +536,17 @@ async function startServer() {
           sector,
           machine,
           component_name,
-          replacement_date,
+          cleanDate,
           mechanic_name,
-          lifespan_days,
-          alert_lead_days,
-          notes || '',
+          cleanLifespan,
+          cleanAlert,
+          notes !== undefined ? (notes || '') : null,
           id
         ]
       );
+
+      // Broadcast update to all other connected screens in real-time
+      broadcastMaintenance({ type: 'REPLACEMENT_UPDATED', id, timestamp: Date.now() });
 
       res.json({ success: true, id, syncStatus: 'synced' });
     } catch (e: any) {
@@ -490,6 +561,10 @@ async function startServer() {
     try {
       const { id } = req.params;
       await query('DELETE FROM maintenance_replacements WHERE id = $1', [id]);
+
+      // Broadcast deletion to all other connected screens in real-time
+      broadcastMaintenance({ type: 'REPLACEMENT_DELETED', id, timestamp: Date.now() });
+
       res.json({ success: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -537,6 +612,7 @@ async function startServer() {
       }
       const trimmed = name.trim();
       await query('INSERT INTO maintenance_sectors (name) VALUES ($1) ON CONFLICT (name) DO NOTHING', [trimmed]);
+      broadcastMaintenance({ type: 'SECTORS_CHANGED', timestamp: Date.now() });
       res.json({ success: true, name: trimmed });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -557,6 +633,7 @@ async function startServer() {
       await query('UPDATE maintenance_sectors SET name = $1 WHERE name = $2', [trimmedNew, oldName]);
       // Update sector name in all replacements records!
       await query('UPDATE maintenance_replacements SET sector = $1 WHERE sector = $2', [trimmedNew, oldName]);
+      broadcastMaintenance({ type: 'SECTORS_CHANGED', timestamp: Date.now() });
       res.json({ success: true, oldName, newName: trimmedNew });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -570,6 +647,7 @@ async function startServer() {
     try {
       const { name } = req.params;
       await query('DELETE FROM maintenance_sectors WHERE name = $1', [decodeURIComponent(name)]);
+      broadcastMaintenance({ type: 'SECTORS_CHANGED', timestamp: Date.now() });
       res.json({ success: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });

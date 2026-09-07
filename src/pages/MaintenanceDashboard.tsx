@@ -111,30 +111,67 @@ export default function MaintenanceDashboard() {
   const [formError, setFormError] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Sincronização em tempo real multi-dispositivo (polling a cada 8s e evento de foco)
+  // Sincronização em tempo real multi-dispositivo (SSE push imediato + polling 4s + foco/visibilidade)
   useEffect(() => {
+    // Busca inicial imediata
     fetchReplacements();
     fetchSectors();
 
+    // 1. Canal Server-Sent Events (SSE) para atualização instantânea entre dispositivos (< 100ms)
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource('/api/maintenance/stream');
+      eventSource.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload && payload.type !== 'CONNECTED') {
+            fetchReplacements();
+            fetchSectors();
+          }
+        } catch {
+          // heartbeat ou parse ignorado
+        }
+      };
+      eventSource.onerror = () => {
+        // Reconexão automática gerenciada pelo navegador
+      };
+    } catch (err) {
+      console.warn('SSE stream não disponível:', err);
+    }
+
+    // 2. Polling ativo contínuo a cada 4 segundos (garantia contra redes instáveis em celular)
     const interval = setInterval(() => {
       fetchReplacements();
       fetchSectors();
-    }, 8000);
+    }, 4000);
 
-    const handleFocus = () => {
+    // 3. Atualização instantânea ao alternar de aba, destravar a tela do celular ou reconectar à internet
+    const handleImmediateSync = () => {
       fetchReplacements();
       fetchSectors();
+      syncPendingReplacements();
     };
 
-    window.addEventListener('focus', handleFocus);
-    window.addEventListener('online', handleFocus);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        handleImmediateSync();
+      }
+    };
+
+    window.addEventListener('focus', handleImmediateSync);
+    window.addEventListener('online', handleImmediateSync);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
+      if (eventSource) {
+        eventSource.close();
+      }
       clearInterval(interval);
-      window.removeEventListener('focus', handleFocus);
-      window.removeEventListener('online', handleFocus);
+      window.removeEventListener('focus', handleImmediateSync);
+      window.removeEventListener('online', handleImmediateSync);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [fetchReplacements, fetchSectors]);
+  }, [fetchReplacements, fetchSectors, syncPendingReplacements]);
 
   // Keep formSector in sync if sectors change and current formSector is not in list
   useEffect(() => {

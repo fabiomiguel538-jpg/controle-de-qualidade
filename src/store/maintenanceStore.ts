@@ -130,11 +130,12 @@ export const useMaintenanceStore = create<MaintenanceState>()(
           syncStatus: 'pending',
         };
 
+        // Adiciona imediatamente ao estado local (UI instantânea)
         set((state) => ({
           replacements: [newRecord, ...state.replacements],
         }));
 
-        // Tenta enviar para o backend (Neon DB via API)
+        // Envia para o backend (Neon DB via API)
         try {
           const res = await fetch('/api/maintenance/replacements', {
             method: 'POST',
@@ -145,16 +146,17 @@ export const useMaintenanceStore = create<MaintenanceState>()(
           if (res.ok) {
             set((state) => ({
               cloudConnected: true,
-              lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
               replacements: state.replacements.map((r) =>
                 r.id === id ? { ...r, syncStatus: 'synced' } : r
               ),
             }));
           } else {
+            console.error('Erro na resposta do servidor ao salvar peça');
             set({ cloudConnected: false });
           }
         } catch (e) {
-          // Offline seguro
+          console.error('Erro de conexão ao salvar peça:', e);
           set({ cloudConnected: false });
         }
 
@@ -220,21 +222,51 @@ export const useMaintenanceStore = create<MaintenanceState>()(
       fetchReplacements: async () => {
         set({ isSyncing: true });
         try {
-          const res = await fetch('/api/maintenance/replacements');
+          const res = await fetch(`/api/maintenance/replacements?_t=${Date.now()}`, {
+            cache: 'no-store',
+            headers: {
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+              'Pragma': 'no-cache',
+            },
+          });
           if (res.ok) {
-            const data = await res.json();
-            if (Array.isArray(data)) {
-              set({
-                replacements: data,
-                cloudConnected: true,
-                isSyncing: false,
-                lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            const cloudData = await res.json();
+            if (Array.isArray(cloudData)) {
+              set((state) => {
+                // Preserva registros pendentes locais que ainda não foram persistidos
+                const localPending = state.replacements.filter((r) => r.syncStatus === 'pending');
+                const pendingMap = new Map(localPending.map((r) => [r.id, r]));
+
+                const merged = cloudData.map((cr: MaintenanceReplacement) => {
+                  if (pendingMap.has(cr.id)) {
+                    return pendingMap.get(cr.id)!;
+                  }
+                  return { ...cr, syncStatus: 'synced' as const };
+                });
+
+                // Adiciona locais pendentes que não estão no cloud
+                const cloudIds = new Set(cloudData.map((cr: any) => cr.id));
+                const newLocalOnly = localPending.filter((lr) => !cloudIds.has(lr.id));
+
+                return {
+                  replacements: [...newLocalOnly, ...merged],
+                  cloudConnected: true,
+                  isSyncing: false,
+                  lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                };
               });
+
+              // Se houver pendências locais, tenta sincronizar em segundo plano
+              const hasPending = get().replacements.some((r) => r.syncStatus === 'pending');
+              if (hasPending) {
+                get().syncPendingReplacements();
+              }
               return;
             }
           }
-        } catch {
-          // Fallback para cache local
+        } catch (e) {
+          console.warn('Falha ao obter lista atualizada da nuvem:', e);
+          set({ cloudConnected: false });
         }
         set({ isSyncing: false });
       },
@@ -262,7 +294,7 @@ export const useMaintenanceStore = create<MaintenanceState>()(
           set({
             isSyncing: false,
             cloudConnected: true,
-            lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
           });
           return true;
         } catch {
@@ -273,7 +305,13 @@ export const useMaintenanceStore = create<MaintenanceState>()(
 
       fetchSectors: async () => {
         try {
-          const res = await fetch('/api/maintenance/sectors');
+          const res = await fetch(`/api/maintenance/sectors?_t=${Date.now()}`, {
+            cache: 'no-store',
+            headers: {
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+              'Pragma': 'no-cache',
+            },
+          });
           if (res.ok) {
             const data = await res.json();
             if (Array.isArray(data) && data.length > 0) {
