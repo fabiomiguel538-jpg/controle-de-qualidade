@@ -30,6 +30,14 @@ const storage = {
   },
 };
 
+export const getLocalDateString = (): string => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 interface ReportState {
   reports: Report[];
   currentReportId: string | null;
@@ -40,6 +48,7 @@ interface ReportState {
   setCurrentReport: (id: string | null) => void;
   createNewReport: (info: Partial<Report>) => string;
   updateCurrentReport: (updates: Partial<Report>) => void;
+  updateReport: (id: string, updates: Partial<Report>) => Promise<boolean>;
   finalizeReport: (id: string) => Promise<void>;
   reopenReport: (id: string) => Promise<void>;
   markSynced: (id: string) => void;
@@ -64,7 +73,7 @@ export const useReportStore = create<ReportState>()(
         const id = uuidv4();
         const newReport: Report = {
           id,
-          date: info.date || new Date().toISOString().split('T')[0],
+          date: info.date || getLocalDateString(),
           shift: info.shift || 'A',
           line: info.line || '',
           leaderName: info.leaderName || '',
@@ -121,6 +130,34 @@ export const useReportStore = create<ReportState>()(
               : r
           ),
         }));
+      },
+
+      updateReport: async (id, updates): Promise<boolean> => {
+        set((state) => ({
+          reports: state.reports.map((r) =>
+            r.id === id
+              ? { ...r, ...updates, syncStatus: 'pending' }
+              : r
+          ),
+        }));
+
+        const targetReport = get().reports.find(r => r.id === id);
+        if (!targetReport) return false;
+
+        try {
+          await saveReportCloud(targetReport);
+          set((state) => ({
+            cloudConnected: true,
+            lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            reports: state.reports.map((r) =>
+              r.id === id ? { ...r, syncStatus: 'synced' } : r
+            ),
+          }));
+          return true;
+        } catch (e) {
+          console.warn('Could not sync report update to cloud:', e);
+          return false;
+        }
       },
 
       saveReportNow: async (idToSave?: string): Promise<boolean> => {

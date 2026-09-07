@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link, useSearchParams } from 'react-router-dom';
-import { useReportStore, Report } from '../store/reportStore';
+import { useReportStore, Report, getLocalDateString } from '../store/reportStore';
 import { useAuthStore } from '../store/authStore';
-import { ChevronLeft, Plus, Trash2, CheckCircle, Save, FileDown, ArrowRight, Clock, UploadCloud, Check, RefreshCw, Sparkles, Pencil, Edit3, RotateCcw, AlertCircle, Eraser, ShieldAlert, Layers, LayoutGrid, ChevronRight, Package, PackageX, Truck, Boxes } from 'lucide-react';
+import { ChevronLeft, Plus, Trash2, CheckCircle, Save, FileDown, ArrowRight, Clock, UploadCloud, Check, RefreshCw, Sparkles, Pencil, Edit3, RotateCcw, AlertCircle, Eraser, ShieldAlert, Layers, LayoutGrid, ChevronRight, Package, PackageX, Truck, Boxes, Calendar } from 'lucide-react';
 import { DEFECTS_LIST, SHIFT_HOURS } from '../lib/constants';
 import { generatePDF } from '../lib/pdfGenerator';
 import { canUserAccessReport } from '../lib/permissions';
 import { ProductionLosses, ProductionLossEntry } from '../types';
+import { formatReportDate } from './ReportList';
 import clsx from 'clsx';
 import CloudSyncBadge from '../components/CloudSyncBadge';
 import TimeInput from '../components/TimeInput';
@@ -2276,10 +2277,39 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
               
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-xs font-semibold text-neutral-700 mb-0.5">Data *</label>
+                  <div className="flex justify-between items-center mb-0.5">
+                    <label className="text-xs font-semibold text-neutral-700">Data *</label>
+                    {!isLocked && (
+                      <div className="flex gap-1">
+                        <button
+                          type="button"
+                          onClick={() => update({ date: getLocalDateString() })}
+                          className="text-[10px] font-bold text-neutral-600 bg-neutral-100 hover:bg-neutral-200 px-1.5 py-0.5 rounded border border-neutral-200 transition-colors"
+                          title="Definir data como Hoje"
+                        >
+                          Hoje
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const d = new Date();
+                            d.setDate(d.getDate() - 1);
+                            const y = d.getFullYear();
+                            const m = String(d.getMonth() + 1).padStart(2, '0');
+                            const day = String(d.getDate()).padStart(2, '0');
+                            update({ date: `${y}-${m}-${day}` });
+                          }}
+                          className="text-[10px] font-bold text-neutral-600 bg-neutral-100 hover:bg-neutral-200 px-1.5 py-0.5 rounded border border-neutral-200 transition-colors"
+                          title="Definir data como Ontem"
+                        >
+                          Ontem
+                        </button>
+                      </div>
+                    )}
+                  </div>
                   <input 
                     type="date" 
-                    value={report.date} 
+                    value={report.date?.split('T')[0] || ''} 
                     onChange={e => update({ date: e.target.value })}
                     disabled={isLocked}
                     className="w-full py-1.5 px-2 bg-neutral-50 border border-neutral-200 rounded-lg text-xs font-medium focus:ring-1 focus:ring-orange-500 outline-none"
@@ -3337,7 +3367,7 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
                 </div>
                 <div className="flex justify-between py-1.5">
                   <span className="font-semibold text-neutral-500">Data e Turno</span>
-                  <span className="font-bold">{report.date} • Turno {report.shift}</span>
+                  <span className="font-bold">{formatReportDate(report.date)} • Turno {report.shift}</span>
                 </div>
                 <div className="flex justify-between py-1.5">
                   <span className="font-semibold text-neutral-500">Linha</span>

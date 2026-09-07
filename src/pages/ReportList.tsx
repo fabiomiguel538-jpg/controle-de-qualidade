@@ -1,13 +1,23 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { useReportStore } from '../store/reportStore';
+import { useReportStore, getLocalDateString } from '../store/reportStore';
 import { useAuthStore } from '../store/authStore';
-import { ChevronLeft, Search, FileText, CheckCircle, Clock, FileDown, BarChart2, Edit3, Eye, User as UserIcon, ShieldCheck, Trash2 } from 'lucide-react';
-import { format } from 'date-fns';
+import { ChevronLeft, Search, FileText, CheckCircle, Clock, FileDown, BarChart2, Edit3, Eye, User as UserIcon, ShieldCheck, Trash2, Calendar, Check, X } from 'lucide-react';
 import { generatePDF } from '../lib/pdfGenerator';
 import { canUserAccessReport } from '../lib/permissions';
 import VivaLogo from '../components/VivaLogo';
 import CloudSyncBadge from '../components/CloudSyncBadge';
+
+export function formatReportDate(dateStr: string): string {
+  if (!dateStr) return '--/--/----';
+  const clean = dateStr.split('T')[0];
+  const parts = clean.split('-');
+  if (parts.length === 3 && parts[0].length === 4) {
+    const [y, m, d] = parts;
+    return `${d}/${m}/${y}`;
+  }
+  return dateStr;
+}
 
 export default function ReportList() {
   const [searchParams] = useSearchParams();
@@ -15,9 +25,15 @@ export default function ReportList() {
   const isAdmin = user?.role === 'ADMIN';
   
   const initialFilter = searchParams.get('filter') || (isAdmin ? 'finalizado' : 'all');
-  const { reports, fetchFromCloud, deleteReport } = useReportStore();
+  const { reports, fetchFromCloud, deleteReport, updateReport } = useReportStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState(initialFilter);
+
+  // Estado para edição rápida de data nos relatórios
+  const [editingDateId, setEditingDateId] = useState<string | null>(null);
+  const [tempDate, setTempDate] = useState<string>('');
+  const [isSavingDate, setIsSavingDate] = useState<boolean>(false);
+  const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.preventDefault();
@@ -165,6 +181,14 @@ export default function ReportList() {
           </div>
         )}
 
+        {/* Feedback de alteração de data */}
+        {feedbackMsg && (
+          <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-neutral-900 text-white text-xs font-bold px-4 py-2 rounded-full shadow-lg flex items-center gap-2 border border-orange-500">
+            <CheckCircle size={14} className="text-orange-400" />
+            <span>{feedbackMsg}</span>
+          </div>
+        )}
+
         {/* List */}
         <div className="space-y-4">
           {filteredReports.length === 0 ? (
@@ -183,23 +207,114 @@ export default function ReportList() {
                 key={report.id} 
                 className="block bg-white rounded-2xl p-5 shadow-sm border border-neutral-100"
               >
-                <Link to={`/reports/edit/${report.id}`} className="block">
-                  <div className="flex justify-between items-start mb-3">
-                    <div>
-                      <h3 className="font-bold text-lg">{format(new Date(report.date), 'dd/MM/yyyy')}</h3>
-                      <p className="text-sm text-neutral-500">Turno {report.shift} • Linha {report.line || '-'}</p>
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-bold text-lg text-neutral-800">
+                        {formatReportDate(report.date)}
+                      </h3>
+                      {!isAdmin && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setEditingDateId(editingDateId === report.id ? null : report.id);
+                            setTempDate(report.date?.split('T')[0] || getLocalDateString());
+                          }}
+                          className="flex items-center gap-1 text-[11px] font-bold text-orange-600 bg-orange-50 hover:bg-orange-100 px-2 py-0.5 rounded-md border border-orange-200 transition-all active:scale-95 cursor-pointer shadow-2xs"
+                          title="Alterar data deste relatório"
+                        >
+                          <Calendar size={12} className="text-orange-500" />
+                          <span>Editar Data</span>
+                        </button>
+                      )}
                     </div>
-                    {report.status === 'FINALIZADO' ? (
-                      <span className="flex items-center text-xs font-semibold text-orange-500 bg-neutral-900 px-2.5 py-1 rounded-full">
-                        <CheckCircle size={12} className="mr-1" /> Finalizado
-                      </span>
-                    ) : (
-                      <span className="flex items-center text-xs font-semibold text-orange-600 bg-orange-50 px-2.5 py-1 rounded-full">
-                        <Clock size={12} className="mr-1" /> Em Andamento
-                      </span>
-                    )}
+                    <p className="text-sm text-neutral-500">Turno {report.shift} • Linha {report.line || '-'}</p>
                   </div>
+                  {report.status === 'FINALIZADO' ? (
+                    <span className="flex items-center text-xs font-semibold text-orange-500 bg-neutral-900 px-2.5 py-1 rounded-full">
+                      <CheckCircle size={12} className="mr-1" /> Finalizado
+                    </span>
+                  ) : (
+                    <span className="flex items-center text-xs font-semibold text-orange-600 bg-orange-50 px-2.5 py-1 rounded-full">
+                      <Clock size={12} className="mr-1" /> Em Andamento
+                    </span>
+                  )}
+                </div>
 
+                {/* Bloco de edição rápida de data */}
+                {editingDateId === report.id && (
+                  <div 
+                    className="mb-3 p-3 bg-orange-50/80 border border-orange-200 rounded-xl space-y-2 animate-in fade-in duration-150"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-orange-950 flex items-center gap-1">
+                        <Calendar size={13} className="text-orange-600" /> Alterar Data do Relatório:
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setTempDate(getLocalDateString())}
+                          className="text-[10px] font-bold bg-white hover:bg-orange-100 text-neutral-700 px-2 py-0.5 rounded border border-neutral-200 transition-colors"
+                        >
+                          Hoje
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const d = new Date();
+                            d.setDate(d.getDate() - 1);
+                            const y = d.getFullYear();
+                            const m = String(d.getMonth() + 1).padStart(2, '0');
+                            const day = String(d.getDate()).padStart(2, '0');
+                            setTempDate(`${y}-${m}-${day}`);
+                          }}
+                          className="text-[10px] font-bold bg-white hover:bg-orange-100 text-neutral-700 px-2 py-0.5 rounded border border-neutral-200 transition-colors"
+                        >
+                          Ontem
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input 
+                        type="date"
+                        value={tempDate}
+                        onChange={(e) => setTempDate(e.target.value)}
+                        className="py-1.5 px-2.5 text-xs font-bold bg-white border border-neutral-300 rounded-lg outline-none focus:border-orange-500 shadow-2xs"
+                      />
+                      <button
+                        type="button"
+                        disabled={isSavingDate}
+                        onClick={async () => {
+                          if (!tempDate) return;
+                          setIsSavingDate(true);
+                          await updateReport(report.id, { date: tempDate });
+                          setIsSavingDate(false);
+                          setEditingDateId(null);
+                          setFeedbackMsg('Data atualizada com sucesso!');
+                          setTimeout(() => setFeedbackMsg(null), 3000);
+                        }}
+                        className="flex items-center gap-1 py-1.5 px-3 text-xs font-bold text-white bg-orange-600 hover:bg-orange-700 rounded-lg transition-all active:scale-95 shadow-xs cursor-pointer"
+                      >
+                        <Check size={13} />
+                        <span>{isSavingDate ? 'Salvando...' : 'Salvar Nova Data'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingDateId(null)}
+                        className="flex items-center gap-1 py-1.5 px-2.5 text-xs font-semibold text-neutral-600 hover:bg-neutral-200 rounded-lg transition-colors cursor-pointer"
+                      >
+                        <X size={13} />
+                        <span>Cancelar</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <Link to={`/reports/edit/${report.id}`} className="block">
                   <div className="grid grid-cols-2 gap-2 text-sm text-neutral-600 border-t border-neutral-100 pt-3">
                     <div>
                       <span className="text-neutral-400 text-xs block">Formato</span>
