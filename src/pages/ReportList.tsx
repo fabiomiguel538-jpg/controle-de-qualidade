@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useReportStore } from '../store/reportStore';
 import { useAuthStore } from '../store/authStore';
-import { ChevronLeft, Search, FileText, CheckCircle, Clock, FileDown, BarChart2, Edit3, Eye, User as UserIcon, ShieldCheck } from 'lucide-react';
+import { ChevronLeft, Search, FileText, CheckCircle, Clock, FileDown, BarChart2, Edit3, Eye, User as UserIcon, ShieldCheck, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { generatePDF } from '../lib/pdfGenerator';
 import { canUserAccessReport } from '../lib/permissions';
@@ -15,9 +15,16 @@ export default function ReportList() {
   const isAdmin = user?.role === 'ADMIN';
   
   const initialFilter = searchParams.get('filter') || (isAdmin ? 'finalizado' : 'all');
-  const { reports, fetchFromCloud } = useReportStore();
+  const { reports, fetchFromCloud, deleteReport } = useReportStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState(initialFilter);
+
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    if (window.confirm('Tem certeza que deseja excluir este relatório? Esta ação não pode ser desfeita.')) {
+      await deleteReport(id);
+    }
+  };
 
   // Sincroniza da nuvem com escopo de permissões do usuário
   useEffect(() => {
@@ -218,10 +225,10 @@ export default function ReportList() {
                   </div>
                 </Link>
                 
-                <div className="flex gap-2 mt-4 pt-3 border-t border-neutral-100">
+                <div className="flex flex-wrap gap-2 mt-4 pt-3 border-t border-neutral-100">
                   <Link
                     to={`/reports/edit/${report.id}${isAdmin ? '' : '?edit=true'}`}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 bg-neutral-900 hover:bg-black text-white font-bold text-xs rounded-xl shadow-xs transition-all active:scale-95"
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 bg-neutral-900 hover:bg-black text-white font-bold text-xs rounded-xl shadow-xs transition-all active:scale-95 min-w-[120px]"
                   >
                     {isAdmin ? (
                       <>
@@ -246,11 +253,21 @@ export default function ReportList() {
                       e.preventDefault();
                       generatePDF(report);
                     }}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-bold text-xs rounded-xl transition-colors active:scale-95"
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-bold text-xs rounded-xl transition-colors active:scale-95 min-w-[100px]"
                   >
                     <FileDown size={15} />
                     <span>{report.status === 'FINALIZADO' ? 'Baixar PDF' : 'Prévia PDF'}</span>
                   </button>
+
+                  {(isAdmin || report.status !== 'FINALIZADO') && (
+                    <button
+                      onClick={(e) => handleDelete(report.id, e)}
+                      className="flex-none flex items-center justify-center py-2.5 px-3 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-xs rounded-xl transition-colors active:scale-95"
+                      title="Excluir Relatório"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  )}
                 </div>
               </div>
             ))

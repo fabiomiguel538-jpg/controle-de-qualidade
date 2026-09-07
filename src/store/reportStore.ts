@@ -70,6 +70,7 @@ export const useReportStore = create<ReportState>()(
           leaderName: info.leaderName || '',
           format: info.format || '',
           reference: info.reference || '',
+          piecesToMeasure: info.piecesToMeasure ?? 7,
           status: 'EM_ANDAMENTO',
           thickness: [],
           warp: [],

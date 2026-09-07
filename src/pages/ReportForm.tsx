@@ -17,7 +17,7 @@ export default function ReportForm() {
   const { id } = useParams<{ id?: string }>();
   const [searchParams] = useSearchParams();
   const { user } = useAuthStore();
-  const { reports, createNewReport, updateCurrentReport, setCurrentReport, currentReportId, finalizeReport, reopenReport, saveReportNow, isSyncing } = useReportStore();
+  const { reports, createNewReport, updateCurrentReport, setCurrentReport, currentReportId, finalizeReport, reopenReport, saveReportNow, isSyncing, deleteReport } = useReportStore();
   
   // Identifica se o usuário logado é o Líder Matriz 2 (ou admin para suporte)
   const isLiderMatriz2 = Boolean(
@@ -142,6 +142,14 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
     navigate('/');
   };
 
+  const handleDelete = async () => {
+    if (!report) return;
+    if (window.confirm('Tem certeza que deseja excluir este relatório? Esta ação não pode ser desfeita.')) {
+      await deleteReport(report.id);
+      navigate('/');
+    }
+  };
+
   const getNextShiftHour = (existingTimes: string[], shift: string) => {
     const shiftList = SHIFT_HOURS[shift] || SHIFT_HOURS['A'];
     const unused = shiftList.find(h => !existingTimes.includes(h));
@@ -154,20 +162,15 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
 
     const newThickness = hours.map((time, i) => {
       const existing = report.thickness[i];
-      return existing ? { ...existing, time } : { 
-        time, 
-        cv: 'A', 
-        l1: 0, 
-        l2: 0, 
-        l3: 0, 
-        l4: 0,
-        pc1: 0,
-        pc1_s: [0, 0, 0, 0],
-        pc2: 0,
-        pc2_s: [0, 0, 0, 0],
-        pc3: 0,
-        pc3_s: [0, 0, 0, 0],
-      };
+      if (existing) return { ...existing, time };
+      
+      const newThick: any = { time, cv: 'A', l1: 0, l2: 0, l3: 0, l4: 0 };
+      Array.from({ length: report.piecesToMeasure || 7 }).forEach((_, i) => {
+        const col = `pc${i + 1}`;
+        newThick[col] = 0;
+        newThick[`${col}_s`] = [0, 0, 0, 0];
+      });
+      return newThick;
     });
 
     const newWarp = hours.map((time, i) => {
@@ -215,20 +218,15 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
     if (section === 'thickness') {
       const updated = hours.map((time, i) => {
         const existing = report.thickness[i];
-        return existing ? { ...existing, time } : { 
-          time, 
-          cv: 'A', 
-          l1: 0, 
-          l2: 0, 
-          l3: 0, 
-          l4: 0,
-          pc1: 0,
-          pc1_s: [0, 0, 0, 0],
-          pc2: 0,
-          pc2_s: [0, 0, 0, 0],
-          pc3: 0,
-          pc3_s: [0, 0, 0, 0],
-        };
+        if (existing) return { ...existing, time };
+
+        const newThick: any = { time, cv: 'A', l1: 0, l2: 0, l3: 0, l4: 0 };
+        Array.from({ length: report.piecesToMeasure || 7 }).forEach((_, i) => {
+          const col = `pc${i + 1}`;
+          newThick[col] = 0;
+          newThick[`${col}_s`] = [0, 0, 0, 0];
+        });
+        return newThick;
       });
       update({ thickness: updated });
     } else if (section === 'warp') {
@@ -267,14 +265,23 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
     setTimeout(() => setSyncFeedback(null), 3000);
   };
 
-  // Helper para gerar número aleatório próximo ao valor manual base (com 1 casa decimal)
-  const generateCloseValue = (base: number): number => {
-    if (base === 0) return 0;
-    // Variações aleatórias pequenas e naturais em torno do valor base (ex: 0.4 -> 0.3, 0.4, 0.5):
+  // Helper para gerar número aleatório de espessura próximo ao valor base (+/- 0.1 a 0.2 mm)
+  const generateCloseThicknessValue = (base: number): number => {
+    if (base <= 0) return 0;
     const deltas = [-0.2, -0.1, -0.1, 0, 0, 0, 0.1, 0.1, 0.2];
     const delta = deltas[Math.floor(Math.random() * deltas.length)];
+    const result = Math.round((base + delta) * 10) / 10;
+    return result > 0 ? result : base;
+  };
+
+  // Helper para gerar número aleatório de empeno e curvatura com variação maior de até 0,5 mm (+/- 0.1 a 0.5 mm)
+  const generateCloseValue = (base: number): number => {
+    if (base === 0) return 0;
+    // Variações aleatórias de até 0.5 mm em torno do valor base:
+    const deltas = [-0.5, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.4, 0.5];
+    const delta = deltas[Math.floor(Math.random() * deltas.length)];
     let result = Math.round((base + delta) * 10) / 10;
-    if (result < 0) result = 0;
+    if (result <= 0 && base > 0) result = 0.1;
     return result;
   };
 
@@ -412,8 +419,8 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
     setTimeout(() => setSyncFeedback(null), 3000);
   };
 
-  // --- HELPERS DE ESPESSURA (3 PEÇAS POR HORA) ---
-  const getThicknessSides = (item: any, col: 'pc1' | 'pc2' | 'pc3'): number[] => {
+  // --- HELPERS DE ESPESSURA (N PEÇAS POR HORA) ---
+  const getThicknessSides = (item: any, col: string): number[] => {
     if (Array.isArray(item[`${col}_s`])) {
       const s = [...item[`${col}_s`]];
       while (s.length < 4) s.push(0);
@@ -427,7 +434,7 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
     return [0, 0, 0, 0];
   };
 
-  const getThicknessVal = (item: any, col: 'pc1' | 'pc2' | 'pc3'): number => {
+  const getThicknessVal = (item: any, col: string): number => {
     if (typeof item[col] === 'number' && item[col] > 0) return item[col];
     const sides = getThicknessSides(item, col);
     const valid = sides.filter(v => (v || 0) > 0);
@@ -439,13 +446,13 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
 
   const handleAutoFillThicknessPieces = (rowIndex: number) => {
     const list = [...report.thickness];
-    const row = { ...list[rowIndex] };
+    const row: any = { ...list[rowIndex] };
 
     let p1Sides = getThicknessSides(row, 'pc1');
     let p1Val = getThicknessVal(row, 'pc1');
 
     if (p1Val === 0 && !p1Sides.some(v => (v || 0) > 0)) {
-      setSyncFeedback('⚠️ Digite a medida da Peça 1 primeiro para gerar as peças 2 e 3!');
+      setSyncFeedback('⚠️ Digite a medida da Peça 1 primeiro para gerar as demais peças!');
       setTimeout(() => setSyncFeedback(null), 3500);
       return;
     }
@@ -456,11 +463,13 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
       row.pc1 = p1Val;
     }
 
-    const cols: ('pc2' | 'pc3')[] = ['pc2', 'pc3'];
+    const numPieces = report.piecesToMeasure || 7;
+    const cols = Array.from({ length: numPieces - 1 }).map((_, i) => `pc${i + 2}`);
+    
     cols.forEach((col) => {
       const newSides = p1Sides.map(base => {
         if (!base || base === 0) return 0;
-        return generateCloseValue(base);
+        return generateCloseThicknessValue(base);
       });
       row[`${col}_s`] = newSides;
       const valid = newSides.filter(v => (v || 0) > 0);
@@ -469,16 +478,17 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
 
     list[rowIndex] = row;
     update({ thickness: list });
-    setSyncFeedback('✨ Peças 2 e 3 preenchidas com números próximos da 1ª peça!');
+    setSyncFeedback('✨ Demais peças preenchidas com números próximos da 1ª peça!');
     setTimeout(() => setSyncFeedback(null), 3000);
   };
 
   const handleAutoFillAllThicknessPieces = () => {
     const list = [...report.thickness];
     let filledCount = 0;
+    const numPieces = report.piecesToMeasure || 7;
 
     const updated = list.map(item => {
-      const row = { ...item };
+      const row: any = { ...item };
       let p1Sides = getThicknessSides(row, 'pc1');
       let p1Val = getThicknessVal(row, 'pc1');
 
@@ -489,11 +499,11 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
           row.pc1_s = p1Sides;
           row.pc1 = p1Val;
         }
-        const cols: ('pc2' | 'pc3')[] = ['pc2', 'pc3'];
+        const cols = Array.from({ length: numPieces - 1 }).map((_, i) => `pc${i + 2}`);
         cols.forEach((col) => {
           const newSides = p1Sides.map(base => {
             if (!base || base === 0) return 0;
-            return generateCloseValue(base);
+            return generateCloseThicknessValue(base);
           });
           row[`${col}_s`] = newSides;
           const valid = newSides.filter(v => (v || 0) > 0);
@@ -532,10 +542,14 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
     setTimeout(() => setSyncFeedback(null), 2500);
   };
 
-  const handleClearThicknessRowPieces = (rowIndex: number, mode: 'all' | '2to3' = 'all') => {
+  const handleClearThicknessRowPieces = (rowIndex: number, mode: 'all' | '2toN' = 'all') => {
     const list = [...report.thickness];
-    const row = { ...list[rowIndex] };
-    const targetCols: ('pc1' | 'pc2' | 'pc3')[] = mode === 'all' ? ['pc1', 'pc2', 'pc3'] : ['pc2', 'pc3'];
+    const row: any = { ...list[rowIndex] };
+    const numPieces = report.piecesToMeasure || 7;
+    const targetCols = Array.from({ length: numPieces })
+      .map((_, i) => `pc${i + 1}`)
+      .filter(col => mode === 'all' || col !== 'pc1');
+
     targetCols.forEach(col => {
       row[col] = 0;
       row[`${col}_s`] = [0, 0, 0, 0];
@@ -548,20 +562,20 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
     });
     list[rowIndex] = row;
     update({ thickness: list });
-    setSyncFeedback(mode === 'all' ? '🗑️ Valores das 3 peças apagados nesta medição!' : '🗑️ Peças 2 e 3 apagadas nesta medição!');
+    setSyncFeedback(mode === 'all' ? `🗑️ Valores das ${numPieces} peças apagados nesta medição!` : `🗑️ Demais peças apagadas nesta medição!`);
     setTimeout(() => setSyncFeedback(null), 3000);
   };
 
   const handleClearAllThicknessPieces = () => {
-    if (!confirm('Deseja apagar os valores das 3 peças de todas as medições de Espessura?')) return;
+    const numPieces = report.piecesToMeasure || 7;
+    if (!confirm(`Deseja apagar os valores das ${numPieces} peças de todas as medições de Espessura?`)) return;
     const list = report.thickness.map(item => {
-      const row = { ...item };
-      row.pc1 = 0;
-      row.pc1_s = [0, 0, 0, 0];
-      row.pc2 = 0;
-      row.pc2_s = [0, 0, 0, 0];
-      row.pc3 = 0;
-      row.pc3_s = [0, 0, 0, 0];
+      const row: any = { ...item };
+      Array.from({ length: numPieces }).forEach((_, i) => {
+        const col = `pc${i + 1}`;
+        row[col] = 0;
+        row[`${col}_s`] = [0, 0, 0, 0];
+      });
       row.l1 = 0;
       row.l2 = 0;
       row.l3 = 0;
@@ -569,7 +583,7 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
       return row;
     });
     update({ thickness: list });
-    setSyncFeedback('🗑️ Valores das 3 peças apagados em todas as medições de Espessura!');
+    setSyncFeedback(`🗑️ Valores das ${numPieces} peças apagados em todas as medições de Espessura!`);
     setTimeout(() => setSyncFeedback(null), 3000);
   };
 
@@ -766,11 +780,292 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
     setTimeout(() => setSyncFeedback(null), 2500);
   };
 
-  const handleClearAllIntegratedPieces = () => {
+
+
+  // Helper para gerar número aleatório de empeno/curvatura com variação maior de até 0,5 mm (+/- 0.1 a 0.5 mm)
+  const generateCloseWarpValue = (base: number): number => {
+    if (base <= 0) return 0;
+    const deltas = [-0.5, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.4, 0.5];
+    const delta = deltas[Math.floor(Math.random() * deltas.length)];
+    let result = Math.round((base + delta) * 10) / 10;
+    if (result <= 0 && base > 0) result = 0.1;
+    return result;
+  };
+
+  // Preenche todas as horas de Espessura com números aleatórios próximos da 1ª medição
+  const handleAutoFillAllHoursThickness = () => {
+    const hours = SHIFT_HOURS[report.shift] || SHIFT_HOURS['A'] || ['06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00'];
+    const numPieces = report.piecesToMeasure || 7;
+
+    let list = [...report.thickness];
+    if (list.length < hours.length) {
+      list = hours.map((time, i) => {
+        const existing = list[i];
+        if (existing) return { ...existing, time: existing.time || time };
+        const newThick: any = { time, cv: 'A', l1: 0, l2: 0, l3: 0, l4: 0 };
+        Array.from({ length: numPieces }).forEach((_, p) => {
+          const col = `pc${p + 1}`;
+          newThick[col] = 0;
+          newThick[`${col}_s`] = [0, 0, 0, 0];
+        });
+        return newThick;
+      });
+    }
+
+    if (list.length === 0) {
+      setSyncFeedback('⚠️ Nenhuma medição de espessura disponível!');
+      setTimeout(() => setSyncFeedback(null), 3000);
+      return;
+    }
+
+    const firstRow: any = { ...list[0] };
+    let p1Sides = getThicknessSides(firstRow, 'pc1');
+    let p1Val = getThicknessVal(firstRow, 'pc1');
+
+    let hasAnyPiece = p1Val > 0 || p1Sides.some(v => (v || 0) > 0);
+    if (!hasAnyPiece) {
+      for (let p = 1; p < numPieces; p++) {
+        const col = `pc${p + 1}`;
+        if (getThicknessVal(firstRow, col) > 0 || getThicknessSides(firstRow, col).some(v => (v || 0) > 0)) {
+          hasAnyPiece = true;
+          break;
+        }
+      }
+    }
+
+    if (!hasAnyPiece) {
+      setSyncFeedback('⚠️ Preencha a 1ª medição (ex: das 14h) para gerar as outras horas com números próximos!');
+      setTimeout(() => setSyncFeedback(null), 3500);
+      return;
+    }
+
+    if (!p1Sides.some(v => (v || 0) > 0) && p1Val > 0) {
+      p1Sides = [p1Val, p1Val, p1Val, p1Val];
+      firstRow.pc1_s = p1Sides;
+      firstRow.pc1 = p1Val;
+    }
+
+    for (let p = 1; p < numPieces; p++) {
+      const col = `pc${p + 1}`;
+      const curSides = getThicknessSides(firstRow, col);
+      if (!curSides.some(v => (v || 0) > 0)) {
+        const newSides = p1Sides.map(base => base > 0 ? generateCloseThicknessValue(base) : 0);
+        firstRow[`${col}_s`] = newSides;
+        const valid = newSides.filter(v => (v || 0) > 0);
+        firstRow[col] = valid.length > 0 ? Math.round((valid.reduce((a, b) => a + b, 0) / valid.length) * 10) / 10 : 0;
+      }
+    }
+    list[0] = firstRow;
+
+    for (let i = 1; i < list.length; i++) {
+      const row: any = { ...list[i] };
+      row.cv = firstRow.cv || row.cv || 'A';
+      for (let p = 0; p < numPieces; p++) {
+        const col = `pc${p + 1}`;
+        let baseSides = getThicknessSides(firstRow, col);
+        if (!baseSides.some(v => (v || 0) > 0)) {
+          baseSides = p1Sides;
+        }
+        const newSides = baseSides.map(base => base > 0 ? generateCloseThicknessValue(base) : 0);
+        row[`${col}_s`] = newSides;
+        const valid = newSides.filter(v => (v || 0) > 0);
+        row[col] = valid.length > 0 ? Math.round((valid.reduce((a, b) => a + b, 0) / valid.length) * 10) / 10 : 0;
+
+        if (col === 'pc1') {
+          row.l1 = newSides[0] || 0;
+          row.l2 = newSides[1] || 0;
+          row.l3 = newSides[2] || 0;
+          row.l4 = newSides[3] || 0;
+        }
+      }
+      list[i] = row;
+    }
+
+    update({ thickness: list });
+    setSyncFeedback('✨ Todas as horas preenchidas com números aleatórios próximos da 1ª medição!');
+    setTimeout(() => setSyncFeedback(null), 3500);
+  };
+
+  // Preenche todas as horas de Empeno e Curvaturas com números aleatórios próximos da 1ª medição
+  const handleAutoFillAllHoursIntegrated = () => {
+    const hours = SHIFT_HOURS[report.shift] || SHIFT_HOURS['A'] || ['06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00'];
+    const numPieces = report.piecesToMeasure || 7;
+
+    const ensureShiftList = (sectionKey: 'warp' | 'centralCurvature' | 'lateralCurvature') => {
+      let list = [...((report as any)[sectionKey] || [])];
+      if (list.length < hours.length) {
+        list = hours.map((time, i) => {
+          const existing = list[i];
+          if (existing) return { ...existing, time: existing.time || time };
+          const newRow: any = { time };
+          Array.from({ length: numPieces }).forEach((_, p) => {
+            const col = `pc${p + 1}`;
+            newRow[col] = 0;
+            newRow[`${col}_s`] = [0, 0, 0, 0];
+          });
+          return newRow;
+        });
+      }
+      return list;
+    };
+
+    let warpList = ensureShiftList('warp');
+    let ccList = ensureShiftList('centralCurvature');
+    let clList = ensureShiftList('lateralCurvature');
+
+    const checkRow0HasData = (list: any[]) => {
+      if (list.length === 0) return false;
+      const r0 = list[0];
+      for (let p = 0; p < numPieces; p++) {
+        const col = `pc${p + 1}`;
+        if ((r0[col] || 0) > 0) return true;
+        const sides = Array.isArray(r0[`${col}_s`]) ? r0[`${col}_s`] : [];
+        if (sides.some((v: number) => (v || 0) > 0)) return true;
+      }
+      return false;
+    };
+
+    const hasWarp = checkRow0HasData(warpList);
+    const hasCC = checkRow0HasData(ccList);
+    const hasCL = checkRow0HasData(clList);
+
+    if (!hasWarp && !hasCC && !hasCL) {
+      setSyncFeedback('⚠️ Preencha a 1ª medição (ex: das 14h) para gerar as outras horas com números próximos!');
+      setTimeout(() => setSyncFeedback(null), 3500);
+      return;
+    }
+
+    const processSectionWithRandomClose = (list: any[]) => {
+      if (list.length === 0) return list;
+      const firstRow: any = { ...list[0] };
+      
+      let refSides: number[] = [0, 0, 0, 0];
+      for (let p = 0; p < numPieces; p++) {
+        const col = `pc${p + 1}`;
+        const s = Array.isArray(firstRow[`${col}_s`]) ? [...firstRow[`${col}_s`]] : [];
+        while (s.length < 4) s.push(0);
+        if (!s.some(v => v > 0) && (firstRow[col] || 0) > 0) {
+          s[0] = firstRow[col];
+          firstRow[`${col}_s`] = [...s];
+        }
+        if (s.some(v => v > 0) && !refSides.some(v => v > 0)) {
+          refSides = s;
+        }
+      }
+
+      if (!refSides.some(v => v > 0)) {
+        return list;
+      }
+
+      for (let p = 0; p < numPieces; p++) {
+        const col = `pc${p + 1}`;
+        let s = Array.isArray(firstRow[`${col}_s`]) ? [...firstRow[`${col}_s`]] : [];
+        while (s.length < 4) s.push(0);
+        if (!s.some(v => v > 0)) {
+          s = refSides.map(v => v > 0 ? generateCloseWarpValue(v) : 0);
+          firstRow[`${col}_s`] = s;
+          firstRow[col] = Math.max(...s.map(v => v || 0));
+        }
+      }
+      list[0] = firstRow;
+
+      for (let i = 1; i < list.length; i++) {
+        const row: any = { ...list[i] };
+        for (let p = 0; p < numPieces; p++) {
+          const col = `pc${p + 1}`;
+          let baseSides = Array.isArray(firstRow[`${col}_s`]) ? firstRow[`${col}_s`] : [];
+          if (!baseSides.some((v: number) => (v || 0) > 0)) {
+            baseSides = refSides;
+          }
+          const newSides = baseSides.map((baseVal: number) => baseVal > 0 ? generateCloseWarpValue(baseVal) : 0);
+          row[`${col}_s`] = newSides;
+          row[col] = Math.max(...newSides.map((v: number) => v || 0));
+        }
+        list[i] = row;
+      }
+
+      return list;
+    };
+
+    update({
+      warp: processSectionWithRandomClose(warpList),
+      centralCurvature: processSectionWithRandomClose(ccList),
+      lateralCurvature: processSectionWithRandomClose(clList),
+    });
+
+    setSyncFeedback('✨ Todas as horas de Empeno e Curvaturas preenchidas com números aleatórios próximos!');
+    setTimeout(() => setSyncFeedback(null), 3500);
+  };
+
+    const handleClearAllIntegratedPieces = () => {
     if (!confirm('Deseja apagar as medidas de Empeno, Curvatura Central e Curvatura Lateral de todas as horas?')) return;
     handleClearAllMeasurementsPieces('warp');
     handleClearAllMeasurementsPieces('centralCurvature');
     handleClearAllMeasurementsPieces('lateralCurvature');
+  };
+
+  // Helper para gerar número aleatório de peso da caixa com variação de até 0,2 kg (+/- 0.05 a 0.2 kg)
+  const generateCloseBoxWeightValue = (base: number): number => {
+    if (base <= 0) return 0;
+    const decimals = (base.toString().split('.')[1] || '').length;
+    if (decimals <= 1) {
+      const deltas = [-0.2, -0.1, -0.1, 0, 0, 0.1, 0.1, 0.2];
+      const delta = deltas[Math.floor(Math.random() * deltas.length)];
+      const res = Math.round((base + delta) * 10) / 10;
+      return res > 0 ? res : base;
+    } else {
+      const deltas = [-0.2, -0.15, -0.1, -0.05, 0, 0.05, 0.1, 0.15, 0.2];
+      const delta = deltas[Math.floor(Math.random() * deltas.length)];
+      const res = Math.round((base + delta) * 100) / 100;
+      return res > 0 ? res : base;
+    }
+  };
+
+  // Preenche todas as horas de Pesagem da Caixa com números aleatórios próximos da 1ª medição (+/- 0,2 kg)
+  const handleAutoFillAllHoursBoxWeights = () => {
+    const hours = SHIFT_HOURS[report.shift] || SHIFT_HOURS['A'] || ['06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00'];
+    let list = [...(report.boxWeights || [])];
+
+    if (list.length < hours.length) {
+      list = hours.map((time, i) => {
+        const existing = list[i];
+        if (existing) return { ...existing, time: existing.time || time };
+        return { time, weight: 0 };
+      });
+    }
+
+    if (list.length === 0) {
+      setSyncFeedback('⚠️ Nenhuma pesagem disponível!');
+      setTimeout(() => setSyncFeedback(null), 3000);
+      return;
+    }
+
+    const firstWeight = list[0]?.weight || 0;
+    if (firstWeight <= 0) {
+      update({ boxWeights: list });
+      setSyncFeedback('⚠️ Preencha o peso da 1ª pesagem (ex: 14h) e clique novamente para preencher as outras!');
+      setTimeout(() => setSyncFeedback(null), 4000);
+      return;
+    }
+
+    for (let i = 1; i < list.length; i++) {
+      list[i] = {
+        ...list[i],
+        weight: generateCloseBoxWeightValue(firstWeight)
+      };
+    }
+
+    update({ boxWeights: list });
+    setSyncFeedback('✨ Todas as pesagens preenchidas com variação de até ±0,2 kg!');
+    setTimeout(() => setSyncFeedback(null), 3500);
+  };
+
+  const handleClearAllBoxWeights = () => {
+    if (!report.boxWeights || report.boxWeights.length === 0) return;
+    const cleared = report.boxWeights.map(item => ({ ...item, weight: 0 }));
+    update({ boxWeights: cleared });
+    setSyncFeedback('🗑️ Pesos das caixas zerados.');
+    setTimeout(() => setSyncFeedback(null), 2500);
   };
 
   const TABS: { id: TabKey; label: string }[] = [
@@ -998,6 +1293,18 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
                   <Clock size={12} className="mr-1 text-orange-500" /> Horários Turno {report.shift}
                 </button>
 
+                
+                {isLiderMatriz2 && integratedLength > 0 && (
+                  <button 
+                    type="button"
+                    onClick={handleAutoFillAllHoursIntegrated}
+                    className="flex items-center text-[11px] font-bold text-blue-900 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-md border border-blue-300 active:scale-95 transition-all shadow-2xs"
+                    title="Preenche as outras horas com números aleatórios próximos da 1ª medição (ex: 14h)"
+                  >
+                    <Sparkles size={12} className="mr-1 text-blue-600 stroke-[2.5]" /> Auto Preencher Horas
+                  </button>
+                )}
+
                 {isLiderMatriz2 && integratedLength > 0 && (
                   <button 
                     type="button"
@@ -1137,10 +1444,10 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
                     </div>
                   </div>
 
-                  {/* Seletor de Peça (Pç 1 a 7) - Sempre visível para facilitar a navegação rápida */}
+                  {/* Seletor de Peça (Pç 1 a N) - Sempre visível para facilitar a navegação rápida */}
                   <div className="flex items-center gap-1 overflow-x-auto pb-1 hide-scrollbar">
                     <span className="text-[11px] font-bold text-neutral-500 mr-1 whitespace-nowrap">Peças:</span>
-                    {[0, 1, 2, 3, 4, 5, 6].map((pIdx) => {
+                    {Array.from({ length: report.piecesToMeasure || 7 }).map((_, pIdx) => {
                       const pWarp = getPieceMax('warp', rowIndex, pIdx);
                       const pCC = getPieceMax('centralCurvature', rowIndex, pIdx);
                       const pCL = getPieceMax('lateralCurvature', rowIndex, pIdx);
@@ -1176,7 +1483,7 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
                     })}
                   </div>
 
-                  {/* Conteúdo: Modo Foco (1 Peça com Navegação) vs Modo Grade Completa (7 Peças) */}
+                  {/* Conteúdo: Modo Foco (1 Peça com Navegação) vs Modo Grade Completa (N Peças) */}
                   {integratedViewMode === 'focus' ? (
                     <div className="space-y-2">
                       {renderPieceIntegratedTable(rowIndex, selectedIntegratedPiece)}
@@ -1194,13 +1501,13 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
                         </button>
 
                         <span className="text-xs font-extrabold text-neutral-600 bg-neutral-200/80 px-2.5 py-1 rounded-md">
-                          Peça {selectedIntegratedPiece + 1} de 7
+                          Peça {selectedIntegratedPiece + 1} de {report.piecesToMeasure || 7}
                         </span>
 
                         <button
                           type="button"
-                          onClick={() => setSelectedIntegratedPiece(prev => Math.min(6, prev + 1))}
-                          disabled={selectedIntegratedPiece === 6}
+                          onClick={() => setSelectedIntegratedPiece(prev => Math.min((report.piecesToMeasure || 7) - 1, prev + 1))}
+                          disabled={selectedIntegratedPiece === (report.piecesToMeasure || 7) - 1}
                           className="px-3 py-1.5 bg-neutral-900 hover:bg-black disabled:opacity-40 disabled:pointer-events-none text-white font-bold text-xs rounded-lg shadow-xs active:scale-95 transition-all flex items-center gap-1"
                         >
                           <span>Próxima Peça</span>
@@ -1209,9 +1516,9 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
                       </div>
                     </div>
                   ) : (
-                    /* Modo Grade: Todas as 7 Peças */
+                    /* Modo Grade: Todas as N Peças */
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                      {[0, 1, 2, 3, 4, 5, 6].map((pIdx) => renderPieceIntegratedTable(rowIndex, pIdx))}
+                      {Array.from({ length: report.piecesToMeasure || 7 }).map((_, pIdx) => renderPieceIntegratedTable(rowIndex, pIdx))}
                     </div>
                   )}
 
@@ -1834,6 +2141,16 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
         </div>
 
         <div className="flex items-center gap-1.5 flex-shrink-0">
+          {(isAdmin || !isFinalized) && (
+            <button
+              onClick={handleDelete}
+              className="flex items-center justify-center p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-md transition-colors active:scale-95"
+              title="Excluir Relatório"
+            >
+              <Trash2 size={14} />
+            </button>
+          )}
+
           {/* Botão de alternar Edição em Relatório Finalizado */}
           {isFinalized && (
             <button
@@ -2018,7 +2335,7 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
                   />
                 </div>
 
-                <div>
+                <div className="sm:col-span-1">
                   <label className="block text-xs font-semibold text-neutral-700 mb-0.5">Formato</label>
                   <input 
                     type="text" 
@@ -2028,6 +2345,41 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
                     className="w-full py-1.5 px-2 bg-neutral-50 border border-neutral-200 rounded-lg text-xs font-medium focus:ring-1 focus:ring-orange-500 outline-none"
                     placeholder="Ex: 60x60"
                   />
+                </div>
+
+                <div className="sm:col-span-1">
+                  <label className="block text-xs font-bold text-neutral-800 mb-0.5">Qtd. Peças</label>
+                  <div className="flex bg-neutral-50 border border-neutral-200 rounded-lg overflow-hidden">
+                    <button 
+                      type="button"
+                      disabled={isLocked || (report.piecesToMeasure || 7) <= 1}
+                      onClick={() => update({ piecesToMeasure: Math.max(1, (report.piecesToMeasure || 7) - 1) })}
+                      className="px-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-bold border-r border-neutral-200 active:bg-neutral-300 disabled:opacity-50"
+                    >
+                      -
+                    </button>
+                    <input 
+                      type="number" 
+                      value={report.piecesToMeasure || 7} 
+                      onChange={e => {
+                        const val = parseInt(e.target.value);
+                        if (!isNaN(val) && val > 0 && val <= 20) {
+                          update({ piecesToMeasure: val });
+                        }
+                      }}
+                      disabled={isLocked}
+                      className="w-full py-1.5 px-1 bg-transparent text-center text-xs font-bold focus:outline-none"
+                      title="Qtd. de peças avaliadas na aba de Espessura e Empeno"
+                    />
+                    <button 
+                      type="button"
+                      disabled={isLocked || (report.piecesToMeasure || 7) >= 20}
+                      onClick={() => update({ piecesToMeasure: Math.min(20, (report.piecesToMeasure || 7) + 1) })}
+                      className="px-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-bold border-l border-neutral-200 active:bg-neutral-300 disabled:opacity-50"
+                    >
+                      +
+                    </button>
+                  </div>
                 </div>
 
                 <div className="sm:col-span-2">
@@ -2192,7 +2544,7 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
               <div className="flex flex-wrap justify-between items-center gap-1.5 mb-2.5 pb-2 border-b border-neutral-100">
                 <div>
                   <h2 className="text-sm font-bold text-neutral-800">Controle de Espessura</h2>
-                  <p className="text-[11px] text-neutral-500">3 peças medidas por hora • 4 lados cada (L1-L4 em mm)</p>
+                  <p className="text-[11px] text-neutral-500">{report.piecesToMeasure || 7} peças medidas por hora • 4 lados cada (L1-L4 em mm)</p>
                 </div>
 
                 {!isLocked && (
@@ -2205,14 +2557,26 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
                     >
                       <Clock size={12} className="mr-1 text-orange-500" /> Horários Turno {report.shift}
                     </button>
+                    
+                    {isLiderMatriz2 && report.thickness.length > 0 && (
+                      <button 
+                        type="button"
+                        onClick={handleAutoFillAllHoursThickness}
+                        className="flex items-center text-[11px] font-bold text-blue-900 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded-md border border-blue-300 active:scale-95 transition-all shadow-xs"
+                        title="Preenche as outras horas com números aleatórios próximos da 1ª medição (ex: 14h)"
+                      >
+                        <Sparkles size={12} className="mr-1 text-blue-600 stroke-[2.5]" /> Auto Preencher Horas
+                      </button>
+                    )}
+
                     {isLiderMatriz2 && report.thickness.length > 0 && (
                       <button 
                         type="button"
                         onClick={handleAutoFillAllThicknessPieces}
                         className="flex items-center text-[11px] font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 px-2 py-1 rounded-md border border-amber-300 active:scale-95 transition-all shadow-xs"
-                        title="Preenche as peças 2 e 3 em todas as medições que tenham a Peça 1 preenchida"
+                        title="Preenche as demais peças em todas as medições que tenham a Peça 1 preenchida"
                       >
-                        <Sparkles size={12} className="mr-1 text-amber-600 stroke-[2.5]" /> Auto Pçs 2-3 em Todas
+                        <Sparkles size={12} className="mr-1 text-amber-600 stroke-[2.5]" /> Auto Demais Pçs (Todas)
                       </button>
                     )}
                     {report.thickness.length > 0 && (
@@ -2220,33 +2584,21 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
                         type="button"
                         onClick={handleClearAllThicknessPieces}
                         className="flex items-center text-[11px] font-bold text-red-700 bg-red-50 hover:bg-red-100 px-2 py-1 rounded-md border border-red-200 active:scale-95 transition-all"
-                        title="Apagar os valores das 3 peças em todas as medições de espessura"
+                        title={`Apagar os valores das ${report.piecesToMeasure || 7} peças em todas as medições de espessura`}
                       >
-                        <Eraser size={12} className="mr-1 text-red-500" /> Apagar 3 Peças (Todas)
+                        <Eraser size={12} className="mr-1 text-red-500" /> Apagar {report.piecesToMeasure || 7} Peças (Todas)
                       </button>
                     )}
                     <button 
                       onClick={() => {
                         const nextTime = getNextShiftHour(report.thickness.map(t => t.time), report.shift);
-                        update({ 
-                          thickness: [
-                            ...report.thickness, 
-                            { 
-                              time: nextTime, 
-                              cv: 'A', 
-                              l1: 0, 
-                              l2: 0, 
-                              l3: 0, 
-                              l4: 0,
-                              pc1: 0,
-                              pc1_s: [0, 0, 0, 0],
-                              pc2: 0,
-                              pc2_s: [0, 0, 0, 0],
-                              pc3: 0,
-                              pc3_s: [0, 0, 0, 0]
-                            }
-                          ] 
+                        const newThick: any = { time: nextTime, cv: 'A', l1: 0, l2: 0, l3: 0, l4: 0 };
+                        Array.from({ length: report.piecesToMeasure || 7 }).forEach((_, i) => {
+                          const col = `pc${i + 1}`;
+                          newThick[col] = 0;
+                          newThick[`${col}_s`] = [0, 0, 0, 0];
                         });
+                        update({ thickness: [...report.thickness, newThick] });
                       }}
                       className="flex items-center text-[11px] font-bold text-orange-600 bg-orange-50 hover:bg-orange-100 px-2.5 py-1 rounded-md border border-orange-200 active:scale-95 transition-all"
                     >
@@ -2261,10 +2613,10 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
               ) : (
                 <div className="space-y-2.5">
                   {report.thickness.map((item, index) => {
-                    const p1Val = getThicknessVal(item, 'pc1');
-                    const p2Val = getThicknessVal(item, 'pc2');
-                    const p3Val = getThicknessVal(item, 'pc3');
-                    const activePcs = [p1Val, p2Val, p3Val].filter(v => v > 0);
+                    const activePcs = Array.from({ length: report.piecesToMeasure || 7 })
+                      .map((_, i) => getThicknessVal(item, `pc${i + 1}` as any))
+                      .filter(v => v > 0);
+                    
                     const horaAvg = activePcs.length > 0 
                       ? Math.round((activePcs.reduce((a, b) => a + b, 0) / activePcs.length) * 10) / 10 
                       : 0;
@@ -2322,10 +2674,10 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
                                 type="button"
                                 onClick={() => handleAutoFillThicknessPieces(index)}
                                 className="flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 active:scale-95 text-white font-bold text-[10px] rounded-md shadow-xs transition-all"
-                                title="Preenche as peças 2 e 3 automaticamente com números próximos aos da Peça 1"
+                                title={`Preenche as peças de 2 a ${report.piecesToMeasure || 7} automaticamente com números próximos aos da Peça 1`}
                               >
                                 <Sparkles size={11} className="stroke-[2.5]" />
-                                <span>Gerar Pçs 2 e 3</span>
+                                <span>Gerar demais Pçs</span>
                               </button>
                             )}
 
@@ -2335,21 +2687,21 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
                                   type="button"
                                   onClick={() => handleClearThicknessRowPieces(index, 'all')}
                                   className="flex items-center gap-1 px-2 py-1 bg-white hover:bg-red-50 text-neutral-700 hover:text-red-600 border border-neutral-200 hover:border-red-200 text-[10px] font-bold rounded-md active:scale-95 transition-all"
-                                  title="Apagar os valores das 3 peças desta medição"
+                                  title={`Apagar os valores das ${report.piecesToMeasure || 7} peças desta medição`}
                                 >
                                   <Eraser size={11} className="text-red-500" />
-                                  <span>Apagar 3</span>
+                                  <span>Apagar {report.piecesToMeasure || 7}</span>
                                 </button>
 
                                 {isLiderMatriz2 && (
                                   <button 
                                     type="button"
-                                    onClick={() => handleClearThicknessRowPieces(index, '2to3')}
+                                    onClick={() => handleClearThicknessRowPieces(index, '2toN')}
                                     className="flex items-center gap-1 px-2 py-1 bg-white hover:bg-amber-50 text-neutral-700 hover:text-amber-800 border border-neutral-200 hover:border-amber-300 text-[10px] font-bold rounded-md active:scale-95 transition-all"
-                                    title="Apagar apenas as peças 2 e 3 geradas"
+                                    title="Apagar apenas as peças geradas"
                                   >
                                     <RotateCcw size={11} className="text-amber-600" />
-                                    <span>Apagar 2-3</span>
+                                    <span>Apagar Demais</span>
                                   </button>
                                 )}
 
@@ -2369,9 +2721,11 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
                           </div>
                         </div>
 
-                        {/* As 3 Peças */}
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
-                          {(['pc1', 'pc2', 'pc3'] as const).map((col, pcIdx) => {
+                        {/* As N Peças */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-1.5">
+                          {Array.from({ length: report.piecesToMeasure || 7 }).map((_, pcIdx) => {
+                            const col = `pc${pcIdx + 1}` as any;
+                            // Para compatibilidade, tentamos não quebrar a lógica anterior, mas estendemos
                             const sides = getThicknessSides(item, col);
                             const pcVal = getThicknessVal(item, col);
 
@@ -2395,10 +2749,10 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
                                         type="button"
                                         onClick={() => handleAutoFillThicknessPieces(index)}
                                         className="text-[9px] font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 px-1 py-0.2 rounded flex items-center gap-0.5 active:scale-95 transition-all"
-                                        title="Preencher peças 2 e 3"
+                                        title="Preencher demais peças"
                                       >
                                         <Sparkles size={9} className="text-amber-600 stroke-[2.5]" />
-                                        <span>2 e 3</span>
+                                        <span>Demais Pçs</span>
                                       </button>
                                     )}
                                   </div>
@@ -2448,7 +2802,7 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
                           <div className="flex items-center gap-2 text-[11px] text-neutral-500">
                             <span>Status C/V: <strong className="text-neutral-800">{item.cv || 'A'}</strong></span>
                             <span>•</span>
-                            <span>Medidas: <strong className="text-neutral-800">{activePcs.length}/3</strong></span>
+                            <span>Medidas: <strong className="text-neutral-800">{activePcs.length}/{report.piecesToMeasure || 7}</strong></span>
                           </div>
                           <div className="flex items-center gap-1.5">
                             <span className="font-semibold text-neutral-500 text-[11px]">MÉDIA DA HORA:</span>
@@ -2593,7 +2947,7 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
                   <p className="text-[11px] text-neutral-500">Conferência de peso em kg por hora</p>
                 </div>
                 {!isLocked && (
-                  <div className="flex items-center gap-1">
+                  <div className="flex flex-wrap items-center gap-1">
                     <button 
                       type="button"
                       onClick={() => handleDefineShiftHoursForSection('weights')}
@@ -2602,6 +2956,29 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
                     >
                       <Clock size={12} className="mr-1 text-orange-500" /> Horários Turno {report.shift}
                     </button>
+
+                    {isLiderMatriz2 && (
+                      <button 
+                        type="button"
+                        onClick={handleAutoFillAllHoursBoxWeights}
+                        className="flex items-center text-[11px] font-bold text-blue-900 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-md border border-blue-300 active:scale-95 transition-all shadow-xs"
+                        title="Preenche as outras horas com pesos aleatórios próximos da 1ª pesagem (variação de até ±0,2 kg)"
+                      >
+                        <Sparkles size={12} className="mr-1 text-blue-600 stroke-[2.5]" /> Auto Preencher Pesos
+                      </button>
+                    )}
+
+                    {(report.boxWeights || []).some(b => (b.weight || 0) > 0) && (
+                      <button 
+                        type="button"
+                        onClick={handleClearAllBoxWeights}
+                        className="flex items-center text-[11px] font-bold text-red-700 bg-red-50 hover:bg-red-100 px-2 py-1 rounded-md border border-red-200 active:scale-95 transition-all"
+                        title="Zerar todos os pesos registrados"
+                      >
+                        <Eraser size={12} className="mr-1 text-red-500" /> Limpar Pesos
+                      </button>
+                    )}
+
                     <button 
                       onClick={() => {
                         const nextTime = getNextShiftHour((report.boxWeights || []).map(t => t.time), report.shift);

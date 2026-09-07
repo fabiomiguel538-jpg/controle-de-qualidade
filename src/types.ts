@@ -39,6 +39,7 @@ export interface Report {
   leaderName: string;
   format: string;
   reference: string;
+  piecesToMeasure?: number;
   productChange?: ProductChangeInfo;
   status: ReportStatus;
   userId?: string;
@@ -58,10 +59,11 @@ export interface Report {
     pc3?: number;
     pc3_s?: number[];
     average?: number;
+    [key: string]: any;
   }[];
-  warp: { time: string; pc1: number; pc1_s?: number[]; pc2: number; pc2_s?: number[]; pc3: number; pc3_s?: number[]; pc4: number; pc4_s?: number[]; pc5: number; pc5_s?: number[]; pc6: number; pc6_s?: number[]; pc7: number; pc7_s?: number[] }[];
-  centralCurvature: { time: string; pc1: number; pc1_s?: number[]; pc2: number; pc2_s?: number[]; pc3: number; pc3_s?: number[]; pc4: number; pc4_s?: number[]; pc5: number; pc5_s?: number[]; pc6: number; pc6_s?: number[]; pc7: number; pc7_s?: number[] }[];
-  lateralCurvature: { time: string; pc1: number; pc1_s?: number[]; pc2: number; pc2_s?: number[]; pc3: number; pc3_s?: number[]; pc4: number; pc4_s?: number[]; pc5: number; pc5_s?: number[]; pc6: number; pc6_s?: number[]; pc7: number; pc7_s?: number[] }[];
+  warp: { time: string; pc1: number; pc1_s?: number[]; pc2: number; pc2_s?: number[]; pc3: number; pc3_s?: number[]; pc4: number; pc4_s?: number[]; pc5: number; pc5_s?: number[]; pc6: number; pc6_s?: number[]; pc7: number; pc7_s?: number[]; [key: string]: any }[];
+  centralCurvature: { time: string; pc1: number; pc1_s?: number[]; pc2: number; pc2_s?: number[]; pc3: number; pc3_s?: number[]; pc4: number; pc4_s?: number[]; pc5: number; pc5_s?: number[]; pc6: number; pc6_s?: number[]; pc7: number; pc7_s?: number[]; [key: string]: any }[];
+  lateralCurvature: { time: string; pc1: number; pc1_s?: number[]; pc2: number; pc2_s?: number[]; pc3: number; pc3_s?: number[]; pc4: number; pc4_s?: number[]; pc5: number; pc5_s?: number[]; pc6: number; pc6_s?: number[]; pc7: number; pc7_s?: number[]; [key: string]: any }[];
   
   boxWeights: { time: string; weight: number }[];
   processChecks: { time: string; taratura: 'OK' | 'Ruim' | '-'; corte: 'OK' | 'Ruim' | '-'; lascamento: 'OK' | 'Ruim' | '-' }[];
