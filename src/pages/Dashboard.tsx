@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { useReportStore } from '../store/reportStore';
-import { FileText, Plus, FolderOpen, CheckCircle, BarChart3, LogOut, ShieldCheck } from 'lucide-react';
+import { FileText, Plus, FolderOpen, CheckCircle, BarChart3, LogOut, ShieldCheck, Wrench } from 'lucide-react';
 import VivaLogo from '../components/VivaLogo';
 import CloudSyncBadge from '../components/CloudSyncBadge';
 import { canUserAccessReport } from '../lib/permissions';
@@ -75,6 +75,36 @@ export default function Dashboard() {
       </header>
 
       <main className="p-4 -mt-6">
+        {/* Banner de Acesso Rápido ao Painel de Manutenção */}
+        <div className="mb-4">
+          <Link
+            to="/manutencao"
+            className="flex items-center justify-between p-4 bg-gradient-to-r from-neutral-900 to-neutral-850 hover:from-neutral-850 hover:to-neutral-800 text-white rounded-2xl border border-orange-500/30 shadow-md hover:shadow-orange-500/10 transition-all group"
+          >
+            <div className="flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-xl bg-orange-500/10 border border-orange-500/30 flex items-center justify-center text-orange-400 group-hover:scale-105 transition-transform">
+                <Wrench size={22} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-black text-sm text-neutral-100 group-hover:text-orange-400 transition-colors">
+                    Painel da Manutenção Mecânica
+                  </span>
+                  <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md bg-emerald-950/80 text-emerald-300 border border-emerald-800/80">
+                    100% Online
+                  </span>
+                </div>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  Monitoramento em tempo real de trocas, desgaste e alarmes preventivos de peças
+                </p>
+              </div>
+            </div>
+            <span className="text-xs font-bold text-orange-400 group-hover:translate-x-1 transition-transform ml-2">
+              Abrir Painel ➔
+            </span>
+          </Link>
+        </div>
+
         {/* Main Actions */}
         {!isAdmin && (
           <div className="grid grid-cols-1 gap-4 mb-8">

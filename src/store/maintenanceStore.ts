@@ -2,6 +2,16 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { v4 as uuidv4 } from 'uuid';
 import { MaintenanceReplacement } from '../types';
+import {
+  fetchMaintenanceReplacementsCloud,
+  saveMaintenanceReplacementCloud,
+  updateMaintenanceReplacementCloud,
+  deleteMaintenanceReplacementCloud,
+  fetchMaintenanceSectorsCloud,
+  addMaintenanceSectorCloud,
+  renameMaintenanceSectorCloud,
+  deleteMaintenanceSectorCloud,
+} from '../lib/maintenanceCloudDb';
 
 interface MaintenanceState {
   replacements: MaintenanceReplacement[];
@@ -135,26 +145,16 @@ export const useMaintenanceStore = create<MaintenanceState>()(
           replacements: [newRecord, ...state.replacements],
         }));
 
-        // Envia para o backend (Neon DB via API)
+        // Envia para o banco de dados online na nuvem (API ou Neon direto)
         try {
-          const res = await fetch('/api/maintenance/replacements', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(newRecord),
-          });
-
-          if (res.ok) {
-            set((state) => ({
-              cloudConnected: true,
-              lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-              replacements: state.replacements.map((r) =>
-                r.id === id ? { ...r, syncStatus: 'synced' } : r
-              ),
-            }));
-          } else {
-            console.error('Erro na resposta do servidor ao salvar peça');
-            set({ cloudConnected: false });
-          }
+          await saveMaintenanceReplacementCloud(newRecord);
+          set((state) => ({
+            cloudConnected: true,
+            lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            replacements: state.replacements.map((r) =>
+              r.id === id ? { ...r, syncStatus: 'synced' } : r
+            ),
+          }));
         } catch (e) {
           console.error('Erro de conexão ao salvar peça:', e);
           set({ cloudConnected: false });
@@ -170,30 +170,18 @@ export const useMaintenanceStore = create<MaintenanceState>()(
           ),
         }));
 
-        const updated = get().replacements.find((r) => r.id === id);
-        if (!updated) return false;
-
         try {
-          const res = await fetch(`/api/maintenance/replacements/${id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(updated),
-          });
-
-          if (res.ok) {
-            set((state) => ({
-              cloudConnected: true,
-              lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-              replacements: state.replacements.map((r) =>
-                r.id === id ? { ...r, syncStatus: 'synced' } : r
-              ),
-            }));
-            return true;
-          } else {
-            set({ cloudConnected: false });
-            return false;
-          }
-        } catch {
+          await updateMaintenanceReplacementCloud(id, updates);
+          set((state) => ({
+            cloudConnected: true,
+            lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            replacements: state.replacements.map((r) =>
+              r.id === id ? { ...r, syncStatus: 'synced' } : r
+            ),
+          }));
+          return true;
+        } catch (e) {
+          console.error('Erro ao atualizar peça na nuvem:', e);
           set({ cloudConnected: false });
           return false;
         }
@@ -205,64 +193,54 @@ export const useMaintenanceStore = create<MaintenanceState>()(
         }));
 
         try {
-          const res = await fetch(`/api/maintenance/replacements/${id}`, { method: 'DELETE' });
-          if (res.ok) {
-            set({
-              cloudConnected: true,
-              lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-            });
-            return true;
-          }
-        } catch {
-          // Fallback offline
+          await deleteMaintenanceReplacementCloud(id);
+          set({
+            cloudConnected: true,
+            lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          });
+          return true;
+        } catch (e) {
+          console.error('Erro ao excluir peça na nuvem:', e);
+          set({ cloudConnected: false });
+          return false;
         }
-        return true;
       },
 
       fetchReplacements: async () => {
         set({ isSyncing: true });
         try {
-          const res = await fetch(`/api/maintenance/replacements?_t=${Date.now()}`, {
-            cache: 'no-store',
-            headers: {
-              'Cache-Control': 'no-cache, no-store, must-revalidate',
-              'Pragma': 'no-cache',
-            },
-          });
-          if (res.ok) {
-            const cloudData = await res.json();
-            if (Array.isArray(cloudData)) {
-              set((state) => {
-                // Preserva registros pendentes locais que ainda não foram persistidos
-                const localPending = state.replacements.filter((r) => r.syncStatus === 'pending');
-                const pendingMap = new Map(localPending.map((r) => [r.id, r]));
+          const cloudData = await fetchMaintenanceReplacementsCloud();
+          if (Array.isArray(cloudData)) {
+            set((state) => {
+              // Preserva registros pendentes locais que ainda não foram persistidos
+              const localPending = state.replacements.filter((r) => r.syncStatus === 'pending');
+              const pendingMap = new Map(localPending.map((r) => [r.id, r]));
 
-                const merged = cloudData.map((cr: MaintenanceReplacement) => {
-                  if (pendingMap.has(cr.id)) {
-                    return pendingMap.get(cr.id)!;
-                  }
-                  return { ...cr, syncStatus: 'synced' as const };
-                });
-
-                // Adiciona locais pendentes que não estão no cloud
-                const cloudIds = new Set(cloudData.map((cr: any) => cr.id));
-                const newLocalOnly = localPending.filter((lr) => !cloudIds.has(lr.id));
-
-                return {
-                  replacements: [...newLocalOnly, ...merged],
-                  cloudConnected: true,
-                  isSyncing: false,
-                  lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-                };
+              const merged = cloudData.map((cr: MaintenanceReplacement) => {
+                if (pendingMap.has(cr.id)) {
+                  return pendingMap.get(cr.id)!;
+                }
+                return { ...cr, syncStatus: 'synced' as const };
               });
 
-              // Se houver pendências locais, tenta sincronizar em segundo plano
-              const hasPending = get().replacements.some((r) => r.syncStatus === 'pending');
-              if (hasPending) {
-                get().syncPendingReplacements();
-              }
-              return;
+              // Adiciona locais pendentes que não estão no cloud
+              const cloudIds = new Set(cloudData.map((cr: any) => cr.id));
+              const newLocalOnly = localPending.filter((lr) => !cloudIds.has(lr.id));
+
+              return {
+                replacements: [...newLocalOnly, ...merged],
+                cloudConnected: true,
+                isSyncing: false,
+                lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+              };
+            });
+
+            // Se houver pendências locais, tenta sincronizar em segundo plano
+            const hasPending = get().replacements.some((r) => r.syncStatus === 'pending');
+            if (hasPending) {
+              get().syncPendingReplacements();
             }
+            return;
           }
         } catch (e) {
           console.warn('Falha ao obter lista atualizada da nuvem:', e);
@@ -276,50 +254,36 @@ export const useMaintenanceStore = create<MaintenanceState>()(
         if (pending.length === 0) return true;
 
         set({ isSyncing: true });
-        try {
-          for (const item of pending) {
-            const res = await fetch('/api/maintenance/replacements', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(item),
-            });
-            if (res.ok) {
-              set((state) => ({
-                replacements: state.replacements.map((r) =>
-                  r.id === item.id ? { ...r, syncStatus: 'synced' } : r
-                ),
-              }));
-            }
+        let hasError = false;
+        for (const item of pending) {
+          try {
+            await saveMaintenanceReplacementCloud(item);
+            set((state) => ({
+              replacements: state.replacements.map((r) =>
+                r.id === item.id ? { ...r, syncStatus: 'synced' } : r
+              ),
+            }));
+          } catch (err) {
+            console.error('Erro ao sincronizar item pendente:', item.id, err);
+            hasError = true;
           }
-          set({
-            isSyncing: false,
-            cloudConnected: true,
-            lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-          });
-          return true;
-        } catch {
-          set({ isSyncing: false, cloudConnected: false });
-          return false;
         }
+        set({
+          isSyncing: false,
+          cloudConnected: !hasError,
+          lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        });
+        return !hasError;
       },
 
       fetchSectors: async () => {
         try {
-          const res = await fetch(`/api/maintenance/sectors?_t=${Date.now()}`, {
-            cache: 'no-store',
-            headers: {
-              'Cache-Control': 'no-cache, no-store, must-revalidate',
-              'Pragma': 'no-cache',
-            },
-          });
-          if (res.ok) {
-            const data = await res.json();
-            if (Array.isArray(data) && data.length > 0) {
-              set({ sectors: data });
-            }
+          const cloudSectors = await fetchMaintenanceSectorsCloud();
+          if (Array.isArray(cloudSectors) && cloudSectors.length > 0) {
+            set({ sectors: cloudSectors });
           }
         } catch {
-          // Usa os setores em cache
+          // Mantém setores em cache
         }
       },
 
@@ -337,11 +301,7 @@ export const useMaintenanceStore = create<MaintenanceState>()(
         }));
 
         try {
-          await fetch('/api/maintenance/sectors', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: trimmed }),
-          });
+          await addMaintenanceSectorCloud(trimmed);
           return true;
         } catch {
           return true;
@@ -357,7 +317,7 @@ export const useMaintenanceStore = create<MaintenanceState>()(
           throw new Error('Já existe um setor com este nome.');
         }
 
-        // Atualiza a lista de setores E atualiza todos os componentes que tinham esse setor!
+        // Atualiza a lista de setores E atualiza todos os componentes que tinham esse setor
         set((state) => ({
           sectors: state.sectors.map((s) => (s === oldName ? trimmedNew : s)),
           replacements: state.replacements.map((r) =>
@@ -366,11 +326,7 @@ export const useMaintenanceStore = create<MaintenanceState>()(
         }));
 
         try {
-          await fetch('/api/maintenance/sectors/rename', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ oldName, newName: trimmedNew }),
-          });
+          await renameMaintenanceSectorCloud(oldName, trimmedNew);
           return true;
         } catch {
           return true;
@@ -391,9 +347,7 @@ export const useMaintenanceStore = create<MaintenanceState>()(
         }));
 
         try {
-          await fetch(`/api/maintenance/sectors/${encodeURIComponent(name)}`, {
-            method: 'DELETE',
-          });
+          await deleteMaintenanceSectorCloud(name);
         } catch {
           // Offline
         }
@@ -403,6 +357,16 @@ export const useMaintenanceStore = create<MaintenanceState>()(
     }),
     {
       name: 'viva-maintenance-storage',
+      partialize: (state) => ({
+        replacements: state.replacements,
+        sectors: state.sectors,
+      }),
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          state.cloudConnected = true;
+          state.isSyncing = false;
+        }
+      },
     }
   )
 );
