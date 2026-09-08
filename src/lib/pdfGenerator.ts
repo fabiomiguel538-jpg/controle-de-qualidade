@@ -34,50 +34,188 @@ export const generatePDF = (report: Report) => {
     nextY = 49;
   }
 
-  // Espessura
+  // Espessura com medição dos 4 lados de cada peça
   if (report.thickness.length > 0) {
-    doc.text('1. CONTROLE DE ESPESSURA (3 PEÇAS/HORA)', 14, nextY);
-    autoTable(doc, {
-      startY: nextY + 3,
-      head: [['Hora', 'C/V', 'Peça 1 (mm)', 'Peça 2 (mm)', 'Peça 3 (mm)', 'Média (mm)']],
-      body: report.thickness.map(t => {
-        const getPieceVal = (pc?: number, pc_s?: number[]) => {
-          if (pc && pc > 0) return pc;
-          if (pc_s && pc_s.some(v => (v || 0) > 0)) {
-            const valid = pc_s.filter(v => (v || 0) > 0);
-            return Math.round((valid.reduce((a, b) => a + b, 0) / valid.length) * 10) / 10;
-          }
-          return 0;
-        };
+    const getPieceSides = (t: any, pIdx: number): number[] => {
+      const col = `pc${pIdx}`;
+      const colSides = `${col}_s`;
 
-        let p1 = getPieceVal(t.pc1, t.pc1_s);
-        if (p1 === 0 && ((t.l1 || 0) > 0 || (t.l2 || 0) > 0)) {
-          const leg = [t.l1, t.l2, t.l3, t.l4].filter((v): v is number => typeof v === 'number' && v > 0);
-          if (leg.length > 0) p1 = Math.round((leg.reduce((a, b) => a + b, 0) / leg.length) * 10) / 10;
+      if (Array.isArray(t[colSides]) && t[colSides].length >= 4) {
+        const arr = t[colSides].map((v: any) => (typeof v === 'number' && !isNaN(v) && v > 0 ? v : 0));
+        if (arr.some((v: number) => v > 0)) return arr.slice(0, 4);
+      }
+
+      // Peça 1 legada: l1, l2, l3, l4
+      if (pIdx === 1) {
+        const lArr = [t.l1, t.l2, t.l3, t.l4].map((v: any) => (typeof v === 'number' && !isNaN(v) && v > 0 ? v : 0));
+        if (lArr.some((v: number) => v > 0)) return lArr;
+      }
+
+      // Valor escalar único legado
+      if (typeof t[col] === 'number' && !isNaN(t[col]) && t[col] > 0) {
+        return [t[col], 0, 0, 0];
+      }
+
+      return [0, 0, 0, 0];
+    };
+
+    const getPieceAvg = (sides: number[]): number => {
+      const valid = sides.filter(v => v > 0);
+      if (valid.length === 0) return 0;
+      return Math.round((valid.reduce((a, b) => a + b, 0) / valid.length) * 10) / 10;
+    };
+
+    // Identificar quantas peças têm medições
+    let maxPieceIndex = 3;
+    for (let p = 1; p <= 10; p++) {
+      const col = `pc${p}`;
+      const colSides = `${col}_s`;
+      const hasData = report.thickness.some(t => {
+        if (typeof t[col] === 'number' && t[col] > 0) return true;
+        if (Array.isArray(t[colSides]) && t[colSides].some((v: any) => Number(v) > 0)) return true;
+        if (p === 1 && ((t.l1 && t.l1 > 0) || (t.l2 && t.l2 > 0) || (t.l3 && t.l3 > 0) || (t.l4 && t.l4 > 0))) return true;
+        return false;
+      });
+      if (hasData) {
+        maxPieceIndex = Math.max(maxPieceIndex, p);
+      }
+    }
+    const configuredPieces = report.piecesToMeasure || 3;
+    const totalPieces = Math.max(3, Math.min(configuredPieces, maxPieceIndex));
+
+    doc.text(`1. CONTROLE DE ESPESSURA (${totalPieces} PEÇAS/HORA - MEDIÇÃO DOS 4 LADOS)`, 14, nextY);
+
+    if (totalPieces <= 4) {
+      // Tabela única com todas as peças e seus 4 lados
+      const headRow1: any[] = [
+        { content: 'Hora', rowSpan: 2, styles: { valign: 'middle', halign: 'center' } },
+        { content: 'C/V', rowSpan: 2, styles: { valign: 'middle', halign: 'center' } },
+      ];
+      const headRow2: any[] = [];
+
+      for (let p = 1; p <= totalPieces; p++) {
+        headRow1.push({ content: `Peça ${p} (mm)`, colSpan: 4, styles: { halign: 'center' } });
+        headRow2.push('L1', 'L2', 'L3', 'L4');
+      }
+      headRow1.push({ content: 'Média Geral', rowSpan: 2, styles: { valign: 'middle', halign: 'center' } });
+
+      const body = report.thickness.map(t => {
+        const rowVals: string[] = [t.time, t.cv || 'A'];
+        const pieceAvgs: number[] = [];
+
+        for (let p = 1; p <= totalPieces; p++) {
+          const sides = getPieceSides(t, p);
+          const pAvg = getPieceAvg(sides);
+          if (pAvg > 0) pieceAvgs.push(pAvg);
+
+          rowVals.push(
+            sides[0] > 0 ? sides[0].toFixed(1) : '-',
+            sides[1] > 0 ? sides[1].toFixed(1) : '-',
+            sides[2] > 0 ? sides[2].toFixed(1) : '-',
+            sides[3] > 0 ? sides[3].toFixed(1) : '-'
+          );
         }
 
-        const p2 = getPieceVal(t.pc2, t.pc2_s);
-        const p3 = getPieceVal(t.pc3, t.pc3_s);
-
-        const activePieces = [p1, p2, p3].filter(v => v > 0);
-        const avg = activePieces.length > 0 
-          ? (activePieces.reduce((a, b) => a + b, 0) / activePieces.length).toFixed(1) 
+        const horaAvg = pieceAvgs.length > 0
+          ? (pieceAvgs.reduce((a, b) => a + b, 0) / pieceAvgs.length).toFixed(1)
           : '-';
+        rowVals.push(horaAvg);
 
-        return [
-          t.time,
-          t.cv || 'A',
-          p1 > 0 ? p1.toFixed(1) : '-',
-          p2 > 0 ? p2.toFixed(1) : '-',
-          p3 > 0 ? p3.toFixed(1) : '-',
-          avg
-        ];
-      }),
-      theme: 'grid',
-      styles: { fontSize: 8, cellPadding: 1, halign: 'center' },
-      headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], halign: 'center' }
-    });
-    nextY = (doc as any).lastAutoTable.finalY + 10;
+        return rowVals;
+      });
+
+      autoTable(doc, {
+        startY: nextY + 3,
+        head: [headRow1, headRow2],
+        body,
+        theme: 'grid',
+        styles: { fontSize: totalPieces <= 3 ? 7.5 : 6.8, cellPadding: 1, halign: 'center' },
+        headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], halign: 'center', fontStyle: 'bold' }
+      });
+      nextY = (doc as any).lastAutoTable.finalY + 10;
+    } else {
+      // Se houver mais de 4 peças (ex: 5 a 7), divide em duas partes legíveis
+      const part1Pieces = 4;
+      const head1Row1: any[] = [
+        { content: 'Hora', rowSpan: 2, styles: { valign: 'middle', halign: 'center' } },
+        { content: 'C/V', rowSpan: 2, styles: { valign: 'middle', halign: 'center' } },
+      ];
+      const head1Row2: any[] = [];
+      for (let p = 1; p <= part1Pieces; p++) {
+        head1Row1.push({ content: `Peça ${p} (mm)`, colSpan: 4, styles: { halign: 'center' } });
+        head1Row2.push('L1', 'L2', 'L3', 'L4');
+      }
+
+      const body1 = report.thickness.map(t => {
+        const rowVals: string[] = [t.time, t.cv || 'A'];
+        for (let p = 1; p <= part1Pieces; p++) {
+          const sides = getPieceSides(t, p);
+          rowVals.push(
+            sides[0] > 0 ? sides[0].toFixed(1) : '-',
+            sides[1] > 0 ? sides[1].toFixed(1) : '-',
+            sides[2] > 0 ? sides[2].toFixed(1) : '-',
+            sides[3] > 0 ? sides[3].toFixed(1) : '-'
+          );
+        }
+        return rowVals;
+      });
+
+      autoTable(doc, {
+        startY: nextY + 3,
+        head: [head1Row1, head1Row2],
+        body: body1,
+        theme: 'grid',
+        styles: { fontSize: 6.8, cellPadding: 1, halign: 'center' },
+        headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], halign: 'center', fontStyle: 'bold' }
+      });
+
+      const nextY2 = (doc as any).lastAutoTable.finalY + 4;
+      const head2Row1: any[] = [
+        { content: 'Hora', rowSpan: 2, styles: { valign: 'middle', halign: 'center' } },
+      ];
+      const head2Row2: any[] = [];
+      for (let p = part1Pieces + 1; p <= totalPieces; p++) {
+        head2Row1.push({ content: `Peça ${p} (mm)`, colSpan: 4, styles: { halign: 'center' } });
+        head2Row2.push('L1', 'L2', 'L3', 'L4');
+      }
+      head2Row1.push({ content: 'Média Geral', rowSpan: 2, styles: { valign: 'middle', halign: 'center' } });
+
+      const body2 = report.thickness.map(t => {
+        const rowVals: string[] = [t.time];
+        const allPieceAvgs: number[] = [];
+
+        for (let p = 1; p <= totalPieces; p++) {
+          const sides = getPieceSides(t, p);
+          const pAvg = getPieceAvg(sides);
+          if (pAvg > 0) allPieceAvgs.push(pAvg);
+
+          if (p > part1Pieces) {
+            rowVals.push(
+              sides[0] > 0 ? sides[0].toFixed(1) : '-',
+              sides[1] > 0 ? sides[1].toFixed(1) : '-',
+              sides[2] > 0 ? sides[2].toFixed(1) : '-',
+              sides[3] > 0 ? sides[3].toFixed(1) : '-'
+            );
+          }
+        }
+
+        const horaAvg = allPieceAvgs.length > 0
+          ? (allPieceAvgs.reduce((a, b) => a + b, 0) / allPieceAvgs.length).toFixed(1)
+          : '-';
+        rowVals.push(horaAvg);
+        return rowVals;
+      });
+
+      autoTable(doc, {
+        startY: nextY2,
+        head: [head2Row1, head2Row2],
+        body: body2,
+        theme: 'grid',
+        styles: { fontSize: 6.8, cellPadding: 1, halign: 'center' },
+        headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], halign: 'center', fontStyle: 'bold' }
+      });
+      nextY = (doc as any).lastAutoTable.finalY + 10;
+    }
   }
 
   // Empeno
