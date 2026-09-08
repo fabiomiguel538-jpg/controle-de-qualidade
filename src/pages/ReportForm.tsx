@@ -2,11 +2,11 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link, useSearchParams } from 'react-router-dom';
 import { useReportStore, Report, getLocalDateString } from '../store/reportStore';
 import { useAuthStore } from '../store/authStore';
-import { ChevronLeft, Plus, Trash2, CheckCircle, Save, FileDown, ArrowRight, Clock, UploadCloud, Check, RefreshCw, Sparkles, Pencil, Edit3, RotateCcw, AlertCircle, Eraser, ShieldAlert, Layers, LayoutGrid, ChevronRight, Package, PackageX, Truck, Boxes, Calendar } from 'lucide-react';
+import { ChevronLeft, Plus, Trash2, CheckCircle, Save, FileDown, ArrowRight, Clock, UploadCloud, Check, RefreshCw, Sparkles, Pencil, Edit3, RotateCcw, AlertCircle, Eraser, ShieldAlert, Layers, LayoutGrid, ChevronRight, Package, PackageX, Truck, Boxes, Calendar, Eye, Copy, ArrowDown, Tag, AlertTriangle } from 'lucide-react';
 import { DEFECTS_LIST, SHIFT_HOURS } from '../lib/constants';
 import { generatePDF } from '../lib/pdfGenerator';
 import { canUserAccessReport } from '../lib/permissions';
-import { ProductionLosses, ProductionLossEntry } from '../types';
+import { ProductionLosses, ProductionLossEntry, VisualCheck, ReportStatus } from '../types';
 import { formatReportDate } from './ReportList';
 import clsx from 'clsx';
 import CloudSyncBadge from '../components/CloudSyncBadge';
@@ -18,7 +18,7 @@ export default function ReportForm() {
   const { id } = useParams<{ id?: string }>();
   const [searchParams] = useSearchParams();
   const { user } = useAuthStore();
-  const { reports, createNewReport, updateCurrentReport, setCurrentReport, currentReportId, finalizeReport, reopenReport, saveReportNow, isSyncing, deleteReport } = useReportStore();
+  const { reports, createNewReport, updateCurrentReport, updateReport, setCurrentReport, currentReportId, finalizeReport, reopenReport, saveReportNow, isSyncing, deleteReport } = useReportStore();
   
   // Identifica se o usuário logado é o Líder Matriz 2 (ou admin para suporte)
   const isLiderMatriz2 = Boolean(
@@ -31,7 +31,7 @@ export default function ReportForm() {
     )
   );
 
-type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'losses' | 'defects' | 'obs' | 'summary';
+type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weights' | 'losses' | 'defects' | 'obs' | 'summary';
 
   const [activeTab, setActiveTab] = useState<TabKey>('info');
   const [selectedIntegratedPiece, setSelectedIntegratedPiece] = useState<number>(0); // 0 a 6 (Pç 1 a 7)
@@ -63,7 +63,7 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
     }
   }, [id, createNewReport, setCurrentReport, navigate, user]);
 
-  const report = reports.find(r => r.id === currentReportId);
+  const report = reports.find(r => r.id === currentReportId) || (id ? reports.find(r => r.id === id) : undefined);
 
   if (!report) return <div className="p-8 text-center">Carregando...</div>;
 
@@ -118,6 +118,27 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
     await reopenReport(report.id);
     setIsEditingFinalized(true);
     setSyncFeedback('Relatório reaberto! Agora está com status "Em Andamento".');
+    setTimeout(() => setSyncFeedback(null), 3500);
+  };
+
+  // Alternador direto de status (especialmente para Líder Matriz 2)
+  const handleToggleReportStatus = async () => {
+    if (!report) return;
+    const isCurrentlyFinalized = report.status === 'FINALIZADO';
+    const targetStatus: ReportStatus = isCurrentlyFinalized ? 'EM_ANDAMENTO' : 'FINALIZADO';
+
+    if (isCurrentlyFinalized) {
+      if (!window.confirm('Deseja mudar o status deste relatório para "Em Andamento"? Os campos serão liberados para edição.')) return;
+      await reopenReport(report.id);
+      setIsEditingFinalized(true);
+      setSyncFeedback('Status alterado para "Em Andamento"! Relatório liberado para preenchimento.');
+    } else {
+      if (!window.confirm('Deseja mudar o status deste relatório para "Finalizado"?')) return;
+      await updateReport(report.id, { status: 'FINALIZADO' });
+      setIsEditingFinalized(false);
+      generatePDF({ ...report, status: 'FINALIZADO' });
+      setSyncFeedback('Status alterado para "Finalizado"! PDF gerado e sincronizado.');
+    }
     setTimeout(() => setSyncFeedback(null), 3500);
   };
 
@@ -199,6 +220,22 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
       return existing ? { ...existing, time } : { time, weight: 0 };
     });
 
+    const visualHours = ['Início', ...hours, 'Final'];
+    const baseTone = report.visualChecks?.[0]?.tone || '';
+    const baseBatch = report.visualChecks?.[0]?.batch || '';
+    const baseVisual = report.visualChecks?.[0]?.visual || 'Conforme';
+    const newVisual = visualHours.map((time, i) => {
+      const existing = report.visualChecks?.[i];
+      return existing ? { ...existing, time } : {
+        time,
+        tone: baseTone,
+        batch: baseBatch,
+        visual: baseVisual,
+        hasVariation: false,
+        observation: ''
+      };
+    });
+
     update({
       shift: targetShift,
       thickness: newThickness,
@@ -207,13 +244,14 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
       lateralCurvature: newCL,
       processChecks: newProcess,
       boxWeights: newBoxWeights,
+      visualChecks: newVisual,
     });
 
     setSyncFeedback(`Horários do Turno ${targetShift} definidos com sucesso! (${hours[0]} às ${hours[hours.length - 1]})`);
     setTimeout(() => setSyncFeedback(null), 3500);
   };
 
-  const handleDefineShiftHoursForSection = (section: 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurvature' | 'process' | 'weights') => {
+  const handleDefineShiftHoursForSection = (section: 'thickness' | 'warp' | 'centralCurvature' | 'lateralCurvature' | 'visual' | 'process' | 'weights') => {
     const hours = SHIFT_HOURS[report.shift] || SHIFT_HOURS['A'];
 
     if (section === 'thickness') {
@@ -248,6 +286,24 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
         return existing ? { ...existing, time } : { time, pc1: 0, pc2: 0, pc3: 0, pc4: 0, pc5: 0, pc6: 0, pc7: 0 };
       });
       update({ lateralCurvature: updated });
+    } else if (section === 'visual') {
+      const visualHours = ['Início', ...hours, 'Final'];
+      const baseTone = report.visualChecks?.[0]?.tone || '';
+      const baseBatch = report.visualChecks?.[0]?.batch || '';
+      const baseVisual = report.visualChecks?.[0]?.visual || 'Conforme';
+      const updated: VisualCheck[] = visualHours.map((time, i) => {
+        const existing = report.visualChecks?.[i];
+        if (existing) return { ...existing, time };
+        return {
+          time,
+          tone: baseTone,
+          batch: baseBatch,
+          visual: baseVisual,
+          hasVariation: false,
+          observation: ''
+        };
+      });
+      update({ visualChecks: updated });
     } else if (section === 'process') {
       const updated = hours.map((time, i) => {
         const existing = report.processChecks?.[i];
@@ -1073,6 +1129,7 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
     { id: 'info', label: 'Identificação' },
     { id: 'thickness', label: 'Espessura' },
     { id: 'integrated', label: 'Empeno & Curvaturas' },
+    { id: 'visual', label: 'Visual (Tom & Lote)' },
     { id: 'process', label: 'Processo' },
     { id: 'weights', label: 'Pesagem Caixa' },
     { id: 'losses', label: 'Granel & Repasses' },
@@ -2111,6 +2168,547 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
     );
   };
 
+  // Handlers para o Controle Visual (Tom e Lote por Hora)
+  const handleReplicateVisualDown = (fromIndex: number) => {
+    const list = report.visualChecks || [];
+    const source = list[fromIndex];
+    if (!source) return;
+
+    const updated = list.map((item, idx) => {
+      if (idx > fromIndex) {
+        return {
+          ...item,
+          tone: source.tone,
+          batch: source.batch,
+          visual: source.visual || item.visual || 'Conforme',
+          hasVariation: false
+        };
+      }
+      return item;
+    });
+
+    update({ visualChecks: updated });
+    setSyncFeedback(`⬇️ Tom "${source.tone}" e Lote "${source.batch}" replicados para as horas seguintes!`);
+    setTimeout(() => setSyncFeedback(null), 3500);
+  };
+
+  const handleAddVisualCheck = () => {
+    const list = report.visualChecks || [];
+    let nextTime = 'Início';
+    if (list.length > 0) {
+      const last = list[list.length - 1];
+      if (last.time === 'Início') {
+        const shiftHours = SHIFT_HOURS[report.shift] || SHIFT_HOURS['A'];
+        nextTime = shiftHours[0] || '14:00';
+      } else if (last.time === 'Final') {
+        nextTime = new Date().toTimeString().substring(0, 5);
+      } else {
+        const shiftHours = SHIFT_HOURS[report.shift] || SHIFT_HOURS['A'];
+        const currentIdx = shiftHours.indexOf(last.time);
+        if (currentIdx !== -1 && currentIdx < shiftHours.length - 1) {
+          nextTime = shiftHours[currentIdx + 1];
+        } else if (currentIdx === shiftHours.length - 1) {
+          nextTime = 'Final';
+        } else {
+          nextTime = new Date().toTimeString().substring(0, 5);
+        }
+      }
+    }
+    const lastItem = list[list.length - 1];
+    const newItem: VisualCheck = {
+      time: nextTime,
+      tone: lastItem?.tone || '',
+      batch: lastItem?.batch || '',
+      visual: lastItem?.visual || 'Conforme',
+      hasVariation: false,
+      observation: ''
+    };
+    update({ visualChecks: [...list, newItem] });
+  };
+
+  const handleRemoveVisualCheck = (index: number) => {
+    const list = [...(report.visualChecks || [])];
+    list.splice(index, 1);
+    update({ visualChecks: list });
+  };
+
+  const handleUpdateVisualCheck = (index: number, patch: Partial<VisualCheck>) => {
+    const list = [...(report.visualChecks || [])];
+    if (!list[index]) return;
+    list[index] = { ...list[index], ...patch };
+    update({ visualChecks: list });
+  };
+
+  const handleClearAllVisualChecks = () => {
+    if (!report.visualChecks || report.visualChecks.length === 0) return;
+    if (window.confirm('Deseja limpar todos os registros visuais de Tom e Lote deste turno?')) {
+      update({ visualChecks: [] });
+      setSyncFeedback('🗑️ Tabela de controle visual limpa.');
+      setTimeout(() => setSyncFeedback(null), 2500);
+    }
+  };
+
+  // Renderiza a seção completa de Controle Visual (Tom e Lote por Hora)
+  const renderVisualSection = () => {
+    const list = report.visualChecks || [];
+    const distinctTones = Array.from(new Set(list.map(v => v.tone?.trim()).filter(Boolean)));
+    const distinctBatches = Array.from(new Set(list.map(v => v.batch?.trim()).filter(Boolean)));
+
+    // Contagem de variações detectadas
+    let varCount = 0;
+    list.forEach((item, idx) => {
+      const prev = idx > 0 ? list[idx - 1] : null;
+      const tDiff = Boolean(prev && prev.tone && item.tone && prev.tone.trim().toLowerCase() !== item.tone.trim().toLowerCase());
+      const bDiff = Boolean(prev && prev.batch && item.batch && prev.batch.trim().toLowerCase() !== item.batch.trim().toLowerCase());
+      if (tDiff || bDiff || item.hasVariation) {
+        varCount++;
+      }
+    });
+
+    const commonTones = ['01', '02', '03', '04', 'T1', 'T2', 'Claro', 'Escuro'];
+    const commonBatches = ['L01', 'L02', 'L03', 'L1', 'L2', 'L3'];
+    const commonVisualPresets = ['Conforme', 'Sem Variação', 'Leve Variação', 'Troca de Tom', 'Troca de Lote', 'Alerta CQ'];
+
+    return (
+      <div className="space-y-2.5 w-full max-w-5xl mx-auto">
+        <div className="bg-white p-2.5 sm:p-4 rounded-xl shadow-xs border border-neutral-200">
+          
+          {/* Cabeçalho */}
+          <div className="flex flex-wrap justify-between items-center gap-2 mb-3 pb-2.5 border-b border-neutral-100">
+            <div>
+              <div className="flex items-center gap-1.5">
+                <h2 className="text-sm font-bold text-neutral-800">Controle Visual (Tom & Lote por Hora)</h2>
+                <span className="text-[10px] font-bold bg-neutral-100 text-neutral-600 px-1.5 py-0.5 rounded border border-neutral-200">
+                  Turno {report.shift}
+                </span>
+              </div>
+              <p className="text-[11px] text-neutral-500">
+                Acompanhamento horário de tom, lote e inspeção visual (com detecção e alerta de variações no processo)
+              </p>
+            </div>
+
+            {!isLocked && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleDefineShiftHoursForSection('visual')}
+                  className="flex items-center text-[11px] font-bold text-neutral-700 bg-neutral-100 hover:bg-neutral-200 px-2 py-1 rounded-md border border-neutral-200 active:scale-95 transition-all"
+                  title="Gerar horários padrão: Início, 8 horas do turno e Final"
+                >
+                  <Clock size={12} className="mr-1 text-orange-500" />
+                  Horários Turno {report.shift} (Início ao Final)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleAddVisualCheck}
+                  className="flex items-center text-[11px] font-bold text-orange-600 bg-orange-50 hover:bg-orange-100 px-2.5 py-1 rounded-md border border-orange-200 active:scale-95 transition-all"
+                >
+                  <Plus size={13} className="mr-1" /> Adicionar Horário
+                </button>
+
+                {list.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearAllVisualChecks}
+                    className="flex items-center text-[11px] font-medium text-neutral-500 hover:text-red-600 bg-neutral-50 hover:bg-red-50 px-2 py-1 rounded-md border border-neutral-200 active:scale-95 transition-all"
+                    title="Limpar todos os registros"
+                  >
+                    <Trash2 size={12} className="mr-1" /> Limpar
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Barra de Status e Resumo Rápido */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3 text-xs">
+            <div className="bg-neutral-50 p-2 rounded-lg border border-neutral-200">
+              <span className="text-neutral-500 text-[10px] block font-semibold uppercase">Tons no Turno</span>
+              <strong className="text-neutral-900 font-bold truncate block">
+                {distinctTones.length > 0 ? distinctTones.join(', ') : 'Ainda não informado'}
+              </strong>
+              {distinctTones.length > 1 && (
+                <span className="text-[10px] font-bold text-amber-600 flex items-center gap-0.5 mt-0.5">
+                  <Sparkles size={10} /> {distinctTones.length} tons diferentes
+                </span>
+              )}
+            </div>
+
+            <div className="bg-neutral-50 p-2 rounded-lg border border-neutral-200">
+              <span className="text-neutral-500 text-[10px] block font-semibold uppercase">Lotes no Turno</span>
+              <strong className="text-neutral-900 font-bold truncate block">
+                {distinctBatches.length > 0 ? distinctBatches.join(', ') : 'Ainda não informado'}
+              </strong>
+              {distinctBatches.length > 1 && (
+                <span className="text-[10px] font-bold text-purple-600 flex items-center gap-0.5 mt-0.5">
+                  <Package size={10} /> {distinctBatches.length} lotes diferentes
+                </span>
+              )}
+            </div>
+
+            <div className="bg-neutral-50 p-2 rounded-lg border border-neutral-200">
+              <span className="text-neutral-500 text-[10px] block font-semibold uppercase">Verificações Visuais</span>
+              <strong className="text-neutral-900 font-bold block">
+                {list.length} registros
+              </strong>
+              <span className="text-[10px] text-neutral-500">
+                {list.length >= 8 ? '✅ Turno completo' : 'Em andamento'}
+              </span>
+            </div>
+
+            <div className={clsx(
+              "p-2 rounded-lg border text-xs",
+              varCount > 0 ? "bg-amber-50 border-amber-200 text-amber-900" : "bg-emerald-50 border-emerald-200 text-emerald-900"
+            )}>
+              <span className="text-[10px] block font-semibold uppercase opacity-80">Status de Variação</span>
+              <strong className="font-bold flex items-center gap-1">
+                {varCount > 0 ? (
+                  <>
+                    <AlertTriangle size={12} className="text-amber-600" />
+                    {varCount} variação(ões)
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle size={12} className="text-emerald-600" />
+                    Padrão Estável
+                  </>
+                )}
+              </strong>
+              <span className="text-[10px] opacity-80">
+                {varCount > 0 ? 'Mudanças sinalizadas na tabela' : 'Sem desvios reportados'}
+              </span>
+            </div>
+          </div>
+
+          {/* Estado Vazio */}
+          {list.length === 0 ? (
+            <div className="text-center py-8 px-4 bg-neutral-50/80 rounded-xl border border-dashed border-neutral-300">
+              <Eye size={36} className="mx-auto text-neutral-400 mb-2 opacity-70" />
+              <h3 className="text-sm font-bold text-neutral-700 mb-1">Nenhum controle visual registrado para este turno</h3>
+              <p className="text-xs text-neutral-500 max-w-md mx-auto mb-3">
+                Gere os horários do turno de uma vez (Início, horas intermediárias e Final) para registrar o Tom, Lote e Inspeção Visual.
+              </p>
+              {!isLocked && (
+                <div className="flex flex-wrap justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleDefineShiftHoursForSection('visual')}
+                    className="flex items-center text-xs font-bold text-white bg-neutral-900 hover:bg-black px-3 py-2 rounded-lg shadow-xs active:scale-95 transition-all"
+                  >
+                    <Clock size={13} className="mr-1.5 text-orange-400" />
+                    Gerar Tabela do Turno {report.shift} (Início ao Final)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAddVisualCheck}
+                    className="flex items-center text-xs font-bold text-orange-600 bg-orange-50 hover:bg-orange-100 px-3 py-2 rounded-lg border border-orange-200 active:scale-95 transition-all"
+                  >
+                    <Plus size={13} className="mr-1.5" />
+                    Adicionar Horário Manual
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {/* Dica de Replicação Rápida */}
+              {!isLocked && (
+                <div className="flex items-center justify-between bg-orange-50/80 text-orange-950 p-2 rounded-lg border border-orange-200 text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <Sparkles size={13} className="text-orange-600 flex-shrink-0" />
+                    <span>
+                      <strong>Dica de agilidade:</strong> Preencha o Tom e Lote no <strong>Início</strong> e use o botão <span className="font-bold underline">Replicar</span> para preencher todas as horas seguintes automaticamente!
+                    </span>
+                  </div>
+                  {list[0]?.tone && (
+                    <button
+                      type="button"
+                      onClick={() => handleReplicateVisualDown(0)}
+                      className="flex items-center gap-1 bg-white hover:bg-orange-100 text-orange-900 border border-orange-300 px-2 py-0.5 rounded text-[11px] font-bold active:scale-95 transition-all shadow-2xs whitespace-nowrap"
+                    >
+                      <ArrowDown size={11} /> Replicar 1º p/ Todos
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Lista / Tabela de Horários */}
+              <div className="space-y-2">
+                {list.map((item, index) => {
+                  const prev = index > 0 ? list[index - 1] : null;
+                  const toneChanged = Boolean(prev && prev.tone && item.tone && prev.tone.trim().toLowerCase() !== item.tone.trim().toLowerCase());
+                  const batchChanged = Boolean(prev && prev.batch && item.batch && prev.batch.trim().toLowerCase() !== item.batch.trim().toLowerCase());
+                  const hasVariation = toneChanged || batchChanged || Boolean(item.hasVariation);
+
+                  const isStart = item.time?.toLowerCase().includes('início') || item.time?.toLowerCase().includes('inicio');
+                  const isEnd = item.time?.toLowerCase().includes('final') || item.time?.toLowerCase().includes('fim');
+
+                  return (
+                    <div
+                      key={index}
+                      className={clsx(
+                        "p-2.5 sm:p-3 rounded-xl border transition-all",
+                        hasVariation
+                          ? "bg-amber-50/40 border-amber-300 ring-1 ring-amber-200/80 shadow-2xs"
+                          : isStart || isEnd
+                          ? "bg-neutral-50/90 border-neutral-300"
+                          : "bg-white border-neutral-200 shadow-2xs"
+                      )}
+                    >
+                      {/* Linha superior: Hora, Badges de Variação e Ações */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-2 pb-1.5 border-b border-neutral-100">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {/* Identificação de Hora */}
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] font-bold text-neutral-400">#{index + 1}</span>
+                            <div className="w-24">
+                              <input
+                                type="text"
+                                value={item.time || ''}
+                                onChange={(e) => handleUpdateVisualCheck(index, { time: e.target.value })}
+                                disabled={isLocked}
+                                placeholder="Hora/Fase"
+                                className={clsx(
+                                  "w-full text-xs font-black text-center py-1 px-1.5 rounded-md border transition-colors",
+                                  isStart ? "bg-emerald-50 text-emerald-900 border-emerald-300" :
+                                  isEnd ? "bg-blue-50 text-blue-900 border-blue-300" :
+                                  "bg-white text-neutral-900 border-neutral-300 focus:border-orange-500"
+                                )}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Presets Rápidos de Hora */}
+                          {!isLocked && (
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateVisualCheck(index, { time: 'Início' })}
+                                className={clsx(
+                                  "px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors",
+                                  isStart ? "bg-emerald-600 text-white" : "bg-neutral-100 hover:bg-neutral-200 text-neutral-600"
+                                )}
+                              >
+                                Início
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateVisualCheck(index, { time: 'Final' })}
+                                className={clsx(
+                                  "px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors",
+                                  isEnd ? "bg-blue-600 text-white" : "bg-neutral-100 hover:bg-neutral-200 text-neutral-600"
+                                )}
+                              >
+                                Final
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Badges de Detecção Automática de Mudança */}
+                          {toneChanged && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-black bg-amber-100 text-amber-900 px-2 py-0.5 rounded-md border border-amber-300 shadow-2xs">
+                              <Sparkles size={11} className="text-amber-600" />
+                              Troca de Tom: {prev?.tone} ➔ {item.tone}
+                            </span>
+                          )}
+
+                          {batchChanged && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-black bg-purple-100 text-purple-900 px-2 py-0.5 rounded-md border border-purple-300 shadow-2xs">
+                              <Package size={11} className="text-purple-600" />
+                              Troca de Lote: {prev?.batch} ➔ {item.batch}
+                            </span>
+                          )}
+
+                          {item.hasVariation && !toneChanged && !batchChanged && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-black bg-orange-100 text-orange-900 px-2 py-0.5 rounded-md border border-orange-300">
+                              <AlertTriangle size={11} className="text-orange-600" />
+                              Variação Registrada
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Botões de Ação na Linha */}
+                        {!isLocked && (
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleReplicateVisualDown(index)}
+                              className="flex items-center gap-1 text-[11px] font-bold text-neutral-700 bg-neutral-100 hover:bg-orange-100 hover:text-orange-900 hover:border-orange-300 px-2 py-1 rounded-md border border-neutral-200 active:scale-95 transition-all"
+                              title="Replicar este Tom e Lote para todas as horas seguintes"
+                            >
+                              <ArrowDown size={12} className="text-orange-600" />
+                              Replicar p/ Baixo
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveVisualCheck(index)}
+                              className="text-neutral-400 hover:text-red-500 hover:bg-red-50 p-1 rounded transition-colors"
+                              title="Remover horário"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Campos Principais: Tom, Lote e Visual */}
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                        {/* Tom */}
+                        <div className="sm:col-span-3">
+                          <label className="text-[11px] font-bold text-neutral-700 flex items-center justify-between mb-0.5">
+                            <span>Tom / Tonalidade</span>
+                            {item.tone && <span className="text-[10px] text-neutral-400 font-normal">Atual: {item.tone}</span>}
+                          </label>
+                          <input
+                            type="text"
+                            value={item.tone || ''}
+                            onChange={(e) => handleUpdateVisualCheck(index, { tone: e.target.value })}
+                            disabled={isLocked}
+                            placeholder="Ex: 01, T1"
+                            className="w-full text-xs font-bold text-neutral-900 bg-white border border-neutral-300 rounded-md py-1.5 px-2 focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                          />
+                          {!isLocked && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {commonTones.slice(0, 5).map((t) => (
+                                <button
+                                  key={t}
+                                  type="button"
+                                  onClick={() => handleUpdateVisualCheck(index, { tone: t })}
+                                  className={clsx(
+                                    "text-[10px] px-1.5 py-0.5 rounded border transition-colors",
+                                    item.tone === t
+                                      ? "bg-amber-600 text-white font-bold border-amber-600"
+                                      : "bg-neutral-50 hover:bg-neutral-100 text-neutral-700 border-neutral-200"
+                                  )}
+                                >
+                                  {t}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Lote */}
+                        <div className="sm:col-span-3">
+                          <label className="text-[11px] font-bold text-neutral-700 flex items-center justify-between mb-0.5">
+                            <span>Lote de Produção</span>
+                            {item.batch && <span className="text-[10px] text-neutral-400 font-normal">Atual: {item.batch}</span>}
+                          </label>
+                          <input
+                            type="text"
+                            value={item.batch || ''}
+                            onChange={(e) => handleUpdateVisualCheck(index, { batch: e.target.value })}
+                            disabled={isLocked}
+                            placeholder="Ex: L01, 125A"
+                            className="w-full text-xs font-bold text-neutral-900 bg-white border border-neutral-300 rounded-md py-1.5 px-2 focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                          />
+                          {!isLocked && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {commonBatches.slice(0, 5).map((b) => (
+                                <button
+                                  key={b}
+                                  type="button"
+                                  onClick={() => handleUpdateVisualCheck(index, { batch: b })}
+                                  className={clsx(
+                                    "text-[10px] px-1.5 py-0.5 rounded border transition-colors",
+                                    item.batch === b
+                                      ? "bg-purple-600 text-white font-bold border-purple-600"
+                                      : "bg-neutral-50 hover:bg-neutral-100 text-neutral-700 border-neutral-200"
+                                  )}
+                                >
+                                  {b}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Visual / Aspecto */}
+                        <div className="sm:col-span-6">
+                          <label className="text-[11px] font-bold text-neutral-700 flex items-center justify-between mb-0.5">
+                            <span>Inspeção Visual / Aspecto</span>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateVisualCheck(index, { hasVariation: !item.hasVariation })}
+                              disabled={isLocked}
+                              className={clsx(
+                                "text-[10px] font-bold px-1.5 py-0.2 rounded transition-colors flex items-center gap-0.5",
+                                item.hasVariation
+                                  ? "bg-amber-500 text-white"
+                                  : "text-neutral-500 hover:text-neutral-800"
+                              )}
+                            >
+                              <AlertTriangle size={10} />
+                              {item.hasVariation ? 'Variação Ativa' : 'Sinalizar Variação'}
+                            </button>
+                          </label>
+                          <input
+                            type="text"
+                            value={item.visual || ''}
+                            onChange={(e) => handleUpdateVisualCheck(index, { visual: e.target.value })}
+                            disabled={isLocked}
+                            placeholder="Ex: Conforme, Padrão, Leve variação no esmalte..."
+                            className="w-full text-xs text-neutral-900 bg-white border border-neutral-300 rounded-md py-1.5 px-2 focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                          />
+                          {!isLocked && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {commonVisualPresets.map((vp) => (
+                                <button
+                                  key={vp}
+                                  type="button"
+                                  onClick={() => {
+                                    const isVarPreset = vp.toLowerCase().includes('variação') || vp.toLowerCase().includes('troca') || vp.toLowerCase().includes('alerta');
+                                    handleUpdateVisualCheck(index, {
+                                      visual: vp,
+                                      hasVariation: isVarPreset ? true : item.hasVariation
+                                    });
+                                  }}
+                                  className={clsx(
+                                    "text-[10px] px-1.5 py-0.5 rounded border transition-colors",
+                                    item.visual === vp
+                                      ? "bg-neutral-800 text-white font-bold border-neutral-800"
+                                      : "bg-neutral-50 hover:bg-neutral-100 text-neutral-700 border-neutral-200"
+                                  )}
+                                >
+                                  {vp}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Campo Extra de Observação caso haja Variação */}
+                      {(hasVariation || item.observation) && (
+                        <div className="mt-2 pt-2 border-t border-amber-200/70 flex flex-col sm:flex-row items-start sm:items-center gap-1.5">
+                          <span className="text-[11px] font-bold text-amber-900 flex items-center gap-1 whitespace-nowrap">
+                            <Sparkles size={12} className="text-amber-600" />
+                            Detalhes da Variação:
+                          </span>
+                          <input
+                            type="text"
+                            value={item.observation || ''}
+                            onChange={(e) => handleUpdateVisualCheck(index, { observation: e.target.value })}
+                            disabled={isLocked}
+                            placeholder="Descreva o motivo da troca (ex: 'Troca de lote de esmalte silo 2', 'Aprovado pelo CQ com tom 02')..."
+                            className="flex-1 w-full text-xs text-amber-950 bg-amber-50/90 border border-amber-300 rounded-md py-1 px-2 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 placeholder:text-amber-700/60"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-neutral-100">
       {/* Header Compacto */}
@@ -2142,6 +2740,33 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
         </div>
 
         <div className="flex items-center gap-1.5 flex-shrink-0">
+          {/* Botão exclusivo Líder Matriz 2 para alternar status do relatório */}
+          {isLiderMatriz2 && (
+            <button
+              type="button"
+              onClick={handleToggleReportStatus}
+              className={clsx(
+                "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-black shadow-xs active:scale-95 transition-all border cursor-pointer",
+                isFinalized
+                  ? "bg-amber-100 hover:bg-amber-200 text-amber-950 border-amber-400"
+                  : "bg-neutral-900 hover:bg-black text-white border-neutral-800"
+              )}
+              title={isFinalized ? 'Mudar status de "Finalizado" para "Em Andamento"' : 'Mudar status de "Em Andamento" para "Finalizado"'}
+            >
+              {isFinalized ? (
+                <>
+                  <RotateCcw size={12} className="text-amber-700 stroke-[2.5]" />
+                  <span>Mudar p/ Em Andamento</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle size={12} className="text-orange-400 stroke-[2.5]" />
+                  <span>Mudar p/ Finalizado</span>
+                </>
+              )}
+            </button>
+          )}
+
           {(isAdmin || !isFinalized) && (
             <button
               onClick={handleDelete}
@@ -2273,7 +2898,75 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
         {activeTab === 'info' && (
           <div className="space-y-2.5 w-full max-w-4xl mx-auto">
             <div className="bg-white p-2.5 sm:p-3.5 rounded-xl shadow-xs border border-neutral-200">
-              <h2 className="text-sm font-bold mb-2 pb-1.5 border-b border-neutral-100 text-neutral-800">Identificação do Relatório</h2>
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2 pb-1.5 border-b border-neutral-100">
+                <h2 className="text-sm font-bold text-neutral-800">Identificação do Relatório</h2>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider">Status:</span>
+                  <span className={clsx(
+                    "text-xs font-black px-2 py-0.5 rounded-md",
+                    isFinalized ? "bg-neutral-900 text-white" : "bg-orange-100 text-orange-900 border border-orange-300"
+                  )}>
+                    {isFinalized ? 'FINALIZADO' : 'EM ANDAMENTO'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Painel de Mudança de Status para Líder Matriz 2 */}
+              {isLiderMatriz2 && (
+                <div className="mb-3 p-2.5 sm:p-3 bg-gradient-to-r from-amber-50/90 to-orange-50/70 border border-amber-300 rounded-xl flex flex-wrap items-center justify-between gap-2.5 shadow-2xs">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className={clsx(
+                      "p-2 rounded-lg text-white font-bold text-xs flex items-center justify-center shadow-xs flex-shrink-0",
+                      isFinalized ? "bg-neutral-900" : "bg-orange-500"
+                    )}>
+                      {isFinalized ? <CheckCircle size={16} className="text-orange-400" /> : <Clock size={16} />}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-xs font-bold text-neutral-900">Controle de Status:</span>
+                        <span className={clsx(
+                          "text-[11px] font-black px-1.5 py-0.2 rounded",
+                          isFinalized ? "bg-neutral-900 text-white" : "bg-orange-600 text-white"
+                        )}>
+                          {isFinalized ? 'Finalizado' : 'Em Andamento'}
+                        </span>
+                        <span className="text-[10px] bg-amber-200 text-amber-950 font-bold px-1.5 py-0.2 rounded border border-amber-300">
+                          Líder Matriz 2
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-neutral-600 mt-0.5">
+                        {isFinalized
+                          ? 'Deseja reabrir este relatório para continuar preenchendo? Clique no botão para voltar para "Em Andamento".'
+                          : 'Deseja encerrar este relatório? Clique no botão para mudar para "Finalizado".'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleToggleReportStatus}
+                    className={clsx(
+                      "flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-black shadow-xs active:scale-95 transition-all cursor-pointer whitespace-nowrap",
+                      isFinalized
+                        ? "bg-amber-500 hover:bg-amber-600 text-white border border-amber-600"
+                        : "bg-neutral-900 hover:bg-black text-white"
+                    )}
+                    title={isFinalized ? 'Mudar status para "Em Andamento"' : 'Mudar status para "Finalizado"'}
+                  >
+                    {isFinalized ? (
+                      <>
+                        <RotateCcw size={14} className="stroke-[2.5]" />
+                        <span>Mudar p/ "Em Andamento"</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle size={14} className="text-orange-400" />
+                        <span>Mudar p/ "Finalizado"</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
               
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div>
@@ -2853,6 +3546,9 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
         {/* TAB: EMPENO & CURVATURAS (JUNTAS) */}
         {activeTab === 'integrated' && renderIntegratedSection()}
 
+        {/* TAB: VISUAL (TOM & LOTE POR HORA) */}
+        {activeTab === 'visual' && renderVisualSection()}
+
         {/* TAB: PROCESSO */}
         {activeTab === 'process' && (
           <div className="space-y-2.5 w-full max-w-5xl mx-auto">
@@ -3393,6 +4089,32 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'process' | 'weights' | 'los
                   <span className="font-semibold text-neutral-500">Total Defeitos</span>
                   <span className="font-bold text-red-600">{report.defects.reduce((acc, d) => acc + d.quantity, 0)}</span>
                 </div>
+                {report.visualChecks && report.visualChecks.length > 0 && (
+                  <div className="pt-2 mt-2 border-t border-neutral-100">
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="font-bold text-[11px] text-neutral-700 flex items-center gap-1">
+                        <Eye size={12} className="text-orange-500" /> Controle Visual (Tom & Lote):
+                      </span>
+                      <span className="text-[10px] text-neutral-500 font-medium">
+                        {report.visualChecks.length} verificações
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                      <div className="bg-amber-50/70 p-1.5 rounded border border-amber-200">
+                        <span className="text-amber-800/80 block text-[10px]">Tons no Turno:</span>
+                        <strong className="text-amber-950 font-bold truncate block">
+                          {Array.from(new Set(report.visualChecks.map(v => v.tone?.trim()).filter(Boolean))).join(', ') || '-'}
+                        </strong>
+                      </div>
+                      <div className="bg-purple-50/70 p-1.5 rounded border border-purple-200">
+                        <span className="text-purple-800/80 block text-[10px]">Lotes no Turno:</span>
+                        <strong className="text-purple-950 font-bold truncate block">
+                          {Array.from(new Set(report.visualChecks.map(v => v.batch?.trim()).filter(Boolean))).join(', ') || '-'}
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {report.productionLosses && (
                   <div className="pt-2 mt-2 border-t border-neutral-100">
                     <span className="font-bold text-[11px] text-neutral-600 block mb-1">Granel, Descartes & Repasses:</span>

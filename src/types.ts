@@ -14,6 +14,16 @@ export interface MaintenanceReplacement {
   syncStatus?: 'synced' | 'pending';
 }
 
+export interface VisualCheck {
+  id?: string;
+  time: string;           // "Início", "14:00", "15:00", ..., "Final"
+  tone: string;           // Tom / Tonalidade (ex: "01", "02", "T1", "Claro")
+  batch: string;          // Lote (ex: "L01", "L02", "125A")
+  visual: string;         // Visual / Aspecto (ex: "Conforme", "Sem variação", "Leve variação", "Bisel OK")
+  hasVariation?: boolean; // Se houve variação ou troca de tom/lote neste horário
+  observation?: string;   // Observação específica da variação
+}
+
 export interface Defect {
   code: number;
   name: string;
@@ -83,6 +93,7 @@ export interface Report {
   processChecks: { time: string; taratura: 'OK' | 'Ruim' | '-'; corte: 'OK' | 'Ruim' | '-'; lascamento: 'OK' | 'Ruim' | '-' }[];
 
   defects: { defectId: number; name: string; time: string; quantity: number; observation?: string }[];
+  visualChecks?: VisualCheck[];
   productionLosses?: ProductionLosses;
   observations: { time: string; description: string }[];
   changes: { time: string; initial: string; final: string; visual: string; observation: string }[];

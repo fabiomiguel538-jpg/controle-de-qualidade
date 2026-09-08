@@ -34,6 +34,8 @@ export const generatePDF = (report: Report) => {
     nextY = 49;
   }
 
+  let sectionIndex = 1;
+
   // Espessura com medição dos 4 lados de cada peça
   if (report.thickness.length > 0) {
     const getPieceSides = (t: any, pIdx: number): number[] => {
@@ -83,7 +85,7 @@ export const generatePDF = (report: Report) => {
     const configuredPieces = report.piecesToMeasure || 3;
     const totalPieces = Math.max(3, Math.min(configuredPieces, maxPieceIndex));
 
-    doc.text(`1. CONTROLE DE ESPESSURA (${totalPieces} PEÇAS/HORA - MEDIÇÃO DOS 4 LADOS)`, 14, nextY);
+    doc.text(`${sectionIndex++}. CONTROLE DE ESPESSURA (${totalPieces} PEÇAS/HORA - MEDIÇÃO DOS 4 LADOS)`, 14, nextY);
 
     if (totalPieces <= 4) {
       // Tabela única com todas as peças e seus 4 lados
@@ -220,7 +222,7 @@ export const generatePDF = (report: Report) => {
 
   // Empeno
   if (report.warp.length > 0) {
-    doc.text('2. EMPENO (E)', 14, nextY);
+    doc.text(`${sectionIndex++}. EMPENO (E)`, 14, nextY);
     autoTable(doc, {
       startY: nextY + 3,
       head: [['Hora', 'PC1', 'PC2', 'PC3', 'PC4', 'PC5', 'PC6', 'PC7', 'MAIOR']],
@@ -234,7 +236,7 @@ export const generatePDF = (report: Report) => {
 
   // Curvatura Central
   if (report.centralCurvature?.length > 0) {
-    doc.text('3. CURVATURA CENTRAL (CC)', 14, nextY);
+    doc.text(`${sectionIndex++}. CURVATURA CENTRAL (CC)`, 14, nextY);
     autoTable(doc, {
       startY: nextY + 3,
       head: [['Hora', 'PC1', 'PC2', 'PC3', 'PC4', 'PC5', 'PC6', 'PC7', 'MAIOR']],
@@ -248,7 +250,7 @@ export const generatePDF = (report: Report) => {
 
   // Curvatura Lateral
   if (report.lateralCurvature?.length > 0) {
-    doc.text('4. CURVATURA LATERAL (CL)', 14, nextY);
+    doc.text(`${sectionIndex++}. CURVATURA LATERAL (CL)`, 14, nextY);
     autoTable(doc, {
       startY: nextY + 3,
       head: [['Hora', 'PC1', 'PC2', 'PC3', 'PC4', 'PC5', 'PC6', 'PC7', 'MAIOR']],
@@ -260,9 +262,62 @@ export const generatePDF = (report: Report) => {
     nextY = (doc as any).lastAutoTable.finalY + 10;
   }
 
+  // Controle Visual (Tom e Lote por Hora)
+  if (report.visualChecks && report.visualChecks.length > 0) {
+    if (nextY > 230) {
+      doc.addPage();
+      nextY = 20;
+    }
+    doc.text(`${sectionIndex++}. CONTROLE VISUAL (TOM E LOTE POR HORA)`, 14, nextY);
+    
+    const visualBody = report.visualChecks.map((v, idx, arr) => {
+      const prev = idx > 0 ? arr[idx - 1] : null;
+      const toneDiff = Boolean(prev && prev.tone && v.tone && prev.tone.trim().toLowerCase() !== v.tone.trim().toLowerCase());
+      const batchDiff = Boolean(prev && prev.batch && v.batch && prev.batch.trim().toLowerCase() !== v.batch.trim().toLowerCase());
+      
+      let varStatus = 'Conforme';
+      if (v.hasVariation) {
+        varStatus = v.observation ? `Variação: ${v.observation}` : 'Variação Registrada';
+      } else if (toneDiff && batchDiff) {
+        varStatus = `Troca Tom (${prev?.tone} ➔ ${v.tone}) & Lote (${prev?.batch} ➔ ${v.batch})`;
+      } else if (toneDiff) {
+        varStatus = `Troca Tom (${prev?.tone} ➔ ${v.tone})`;
+      } else if (batchDiff) {
+        varStatus = `Troca Lote (${prev?.batch} ➔ ${v.batch})`;
+      } else if (v.observation) {
+        varStatus = v.observation;
+      }
+
+      return [
+        v.time || '-',
+        v.tone || '-',
+        v.batch || '-',
+        v.visual || 'Conforme',
+        varStatus
+      ];
+    });
+
+    autoTable(doc, {
+      startY: nextY + 3,
+      head: [['Hora', 'Tom', 'Lote', 'Inspeção Visual / Aspecto', 'Variação / Status']],
+      body: visualBody,
+      theme: 'grid',
+      styles: { fontSize: 8, cellPadding: 1.2, halign: 'center' },
+      headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], halign: 'center', fontStyle: 'bold' },
+      columnStyles: {
+        0: { cellWidth: 26, fontStyle: 'bold' },
+        1: { cellWidth: 22 },
+        2: { cellWidth: 26 },
+        3: { cellWidth: 48, halign: 'left' },
+        4: { halign: 'left' }
+      }
+    });
+    nextY = (doc as any).lastAutoTable.finalY + 10;
+  }
+
   // Processo (Taratura, Corte, Lascamento)
   if (report.processChecks?.length > 0) {
-    doc.text('5. CONTROLE DE PROCESSO', 14, nextY);
+    doc.text(`${sectionIndex++}. CONTROLE DE PROCESSO`, 14, nextY);
     autoTable(doc, {
       startY: nextY + 3,
       head: [['Hora', 'Taratura', 'Corte', 'Lascamento']],
@@ -276,7 +331,7 @@ export const generatePDF = (report: Report) => {
 
   // Pesagem
   if (report.boxWeights?.length > 0) {
-    doc.text('6. PESAGEM DA CAIXA', 14, nextY);
+    doc.text(`${sectionIndex++}. PESAGEM DA CAIXA`, 14, nextY);
     autoTable(doc, {
       startY: nextY + 3,
       head: [['Hora', 'Peso (kg)']],
@@ -290,7 +345,7 @@ export const generatePDF = (report: Report) => {
 
   // Defeitos
   if (report.defects.length > 0) {
-    doc.text('7. REGISTRO DE DEFEITOS', 14, nextY);
+    doc.text(`${sectionIndex++}. REGISTRO DE DEFEITOS`, 14, nextY);
     autoTable(doc, {
       startY: nextY + 3,
       head: [['Hora', 'Defeito', 'Quantidade', 'Observação']],
@@ -304,7 +359,7 @@ export const generatePDF = (report: Report) => {
 
   // Observações
   if (report.observations.length > 0) {
-    doc.text('8. OBSERVAÇÕES', 14, nextY);
+    doc.text(`${sectionIndex++}. OBSERVAÇÕES`, 14, nextY);
     autoTable(doc, {
       startY: nextY + 3,
       head: [['Hora', 'Descrição']],
@@ -332,7 +387,7 @@ export const generatePDF = (report: Report) => {
       doc.addPage();
       nextY = 20;
     }
-    doc.text('9. CONTROLE DE GRANEL, REPASSES E DESCARTES', 14, nextY);
+    doc.text(`${sectionIndex++}. CONTROLE DE GRANEL, REPASSES E DESCARTES`, 14, nextY);
     const body: string[][] = [
       ['Granel', `${losses.granel || 0} ${losses.granelUnit || 'paletes'}`],
       ['Caixas Rasgadas', `${losses.caixasRasgadas || 0} cx`],

@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import clsx from 'clsx';
 import { useReportStore, getLocalDateString } from '../store/reportStore';
 import { useAuthStore } from '../store/authStore';
-import { ChevronLeft, Search, FileText, CheckCircle, Clock, FileDown, BarChart2, Edit3, Eye, User as UserIcon, ShieldCheck, Trash2, Calendar, Check, X } from 'lucide-react';
+import { ChevronLeft, Search, FileText, CheckCircle, Clock, FileDown, BarChart2, Edit3, Eye, User as UserIcon, ShieldCheck, Trash2, Calendar, Check, X, RotateCcw } from 'lucide-react';
 import { generatePDF } from '../lib/pdfGenerator';
 import { canUserAccessReport } from '../lib/permissions';
 import VivaLogo from '../components/VivaLogo';
@@ -23,9 +24,20 @@ export default function ReportList() {
   const [searchParams] = useSearchParams();
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'ADMIN';
+
+  // Identifica se o usuário logado é o Líder Matriz 2 (ou admin para suporte)
+  const isLiderMatriz2 = Boolean(
+    user && (
+      user.email?.toLowerCase().replace(/\s+/g, '') === 'lidermatriz2' ||
+      user.id?.toLowerCase().replace(/\s+/g, '') === 'lidermatriz2' ||
+      user.name?.toLowerCase().includes('matriz 2') ||
+      user.name?.toLowerCase().includes('matriz2') ||
+      user.role === 'ADMIN'
+    )
+  );
   
   const initialFilter = searchParams.get('filter') || (isAdmin ? 'finalizado' : 'all');
-  const { reports, fetchFromCloud, deleteReport, updateReport } = useReportStore();
+  const { reports, fetchFromCloud, deleteReport, updateReport, reopenReport } = useReportStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState(initialFilter);
 
@@ -232,15 +244,52 @@ export default function ReportList() {
                     </div>
                     <p className="text-sm text-neutral-500">Turno {report.shift} • Linha {report.line || '-'}</p>
                   </div>
-                  {report.status === 'FINALIZADO' ? (
-                    <span className="flex items-center text-xs font-semibold text-orange-500 bg-neutral-900 px-2.5 py-1 rounded-full">
-                      <CheckCircle size={12} className="mr-1" /> Finalizado
-                    </span>
-                  ) : (
-                    <span className="flex items-center text-xs font-semibold text-orange-600 bg-orange-50 px-2.5 py-1 rounded-full">
-                      <Clock size={12} className="mr-1" /> Em Andamento
-                    </span>
-                  )}
+                  <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                    {report.status === 'FINALIZADO' ? (
+                      <span className="flex items-center text-xs font-semibold text-orange-500 bg-neutral-900 px-2.5 py-1 rounded-full">
+                        <CheckCircle size={12} className="mr-1" /> Finalizado
+                      </span>
+                    ) : (
+                      <span className="flex items-center text-xs font-semibold text-orange-600 bg-orange-50 px-2.5 py-1 rounded-full">
+                        <Clock size={12} className="mr-1" /> Em Andamento
+                      </span>
+                    )}
+
+                    {isLiderMatriz2 && (
+                      <button
+                        type="button"
+                        onClick={async (e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const nextStatus = report.status === 'FINALIZADO' ? 'EM_ANDAMENTO' : 'FINALIZADO';
+                          const confirmMsg = report.status === 'FINALIZADO'
+                            ? 'Deseja mudar o status deste relatório de "Finalizado" para "Em Andamento"? O relatório será liberado para edição.'
+                            : 'Deseja mudar o status deste relatório de "Em Andamento" para "Finalizado"?';
+                          if (!window.confirm(confirmMsg)) return;
+
+                          if (nextStatus === 'EM_ANDAMENTO') {
+                            await reopenReport(report.id);
+                            setFeedbackMsg('Status alterado para "Em Andamento"!');
+                          } else {
+                            await updateReport(report.id, { status: 'FINALIZADO' });
+                            generatePDF({ ...report, status: 'FINALIZADO' });
+                            setFeedbackMsg('Status alterado para "Finalizado"!');
+                          }
+                          setTimeout(() => setFeedbackMsg(null), 3000);
+                        }}
+                        className={clsx(
+                          "flex items-center gap-1 text-[11px] font-black px-2 py-1 rounded-md border transition-all active:scale-95 cursor-pointer shadow-2xs",
+                          report.status === 'FINALIZADO'
+                            ? "bg-amber-100 hover:bg-amber-200 text-amber-950 border-amber-300"
+                            : "bg-neutral-900 hover:bg-black text-white border-neutral-800"
+                        )}
+                        title={report.status === 'FINALIZADO' ? 'Mudar status para "Em Andamento"' : 'Mudar status para "Finalizado"'}
+                      >
+                        <RotateCcw size={11} className={report.status === 'FINALIZADO' ? "text-amber-700 stroke-[2.5]" : "text-orange-400 stroke-[2.5]"} />
+                        <span>{report.status === 'FINALIZADO' ? 'Mudar p/ Em Andamento' : 'Mudar p/ Finalizado'}</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Bloco de edição rápida de data */}

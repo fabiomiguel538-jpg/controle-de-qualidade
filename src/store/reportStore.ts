@@ -8,9 +8,9 @@ import {
   batchSyncReportsCloud,
   deleteReportCloud
 } from '../lib/cloudDb';
-import { Report, ReportStatus, Defect } from '../types';
+import { Report, ReportStatus, Defect, VisualCheck } from '../types';
 
-export type { Report, ReportStatus, Defect };
+export type { Report, ReportStatus, Defect, VisualCheck };
 
 localforage.config({
   name: 'CeramicaDefeitosApp',
@@ -88,6 +88,7 @@ export const useReportStore = create<ReportState>()(
           boxWeights: [],
           processChecks: [],
           defects: [],
+          visualChecks: info.visualChecks || [],
           productChange: {
             hasChange: false,
             time: '',
