@@ -456,8 +456,8 @@ export default function MaintenanceDashboard() {
 
       {/* Top Industrial Header */}
       <header className="bg-neutral-900 border-b border-neutral-800 sticky top-0 z-30 shadow-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3.5">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             {/* Left: Navigation back & Title */}
             <div className="flex items-center gap-3">
               <button
@@ -504,7 +504,7 @@ export default function MaintenanceDashboard() {
                     await Promise.all([fetchReplacements(), fetchSectors(), syncPendingReplacements()]);
                     showToast('Painel sincronizado com a nuvem!');
                   }}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all cursor-pointer ${
+                  className={`hidden ${
                     cloudConnected
                       ? 'bg-emerald-950/40 text-emerald-300 border-emerald-800/60 hover:bg-emerald-900/50'
                       : 'bg-amber-950/40 text-amber-300 border-amber-800/60 hover:bg-amber-900/50'
@@ -539,9 +539,9 @@ export default function MaintenanceDashboard() {
       </header>
 
       {/* Main Container */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 pt-5">
+      <main className="max-w-7xl mx-auto px-3 sm:px-4 pt-3">
         {/* Real-time Multi-Device Sync Ribbon */}
-        <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 mb-5 bg-neutral-900/60 border border-neutral-800/80 rounded-xl text-xs text-neutral-400">
+        <div className="hidden">
           <div className="flex items-center gap-2">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -561,11 +561,11 @@ export default function MaintenanceDashboard() {
         </div>
 
         {/* KPI Summary Cards */}
-        <section className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+        <section className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
           {/* Total */}
           <div
             onClick={() => setSelectedStatus('all')}
-            className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+            className={`p-3 rounded-2xl border transition-all cursor-pointer ${
               selectedStatus === 'all'
                 ? 'bg-neutral-900 border-orange-500/70 shadow-lg shadow-orange-500/5'
                 : 'bg-neutral-900/60 border-neutral-800 hover:border-neutral-700'
@@ -575,14 +575,14 @@ export default function MaintenanceDashboard() {
               <span className="text-xs font-semibold text-neutral-400">Total Monitorado</span>
               <Layers size={16} className="text-neutral-500" />
             </div>
-            <p className="text-2xl sm:text-3xl font-black text-neutral-100">{metrics.total}</p>
-            <span className="text-[11px] text-neutral-500">Componentes ativos</span>
+            <p className="text-xl sm:text-2xl font-black text-neutral-100">{metrics.total}</p>
+            <span className="text-[10px] text-neutral-500">Componentes ativos</span>
           </div>
 
           {/* Vencidos */}
           <div
             onClick={() => setSelectedStatus(selectedStatus === 'overdue' ? 'all' : 'overdue')}
-            className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+            className={`p-3 rounded-2xl border transition-all cursor-pointer ${
               selectedStatus === 'overdue'
                 ? 'bg-red-950/40 border-red-500 shadow-lg shadow-red-500/10'
                 : 'bg-neutral-900/60 border-neutral-800 hover:border-red-900/60'
@@ -592,14 +592,14 @@ export default function MaintenanceDashboard() {
               <span className="text-xs font-bold text-red-400">Vencidos (Troca Imediata)</span>
               <XCircle size={16} className="text-red-500" />
             </div>
-            <p className="text-2xl sm:text-3xl font-black text-red-400">{metrics.overdue}</p>
-            <span className="text-[11px] text-red-400/70">Excederam a durabilidade</span>
+            <p className="text-xl sm:text-2xl font-black text-red-400">{metrics.overdue}</p>
+            <span className="text-[10px] text-red-400/70">Excederam a durabilidade</span>
           </div>
 
           {/* Troca Próxima */}
           <div
             onClick={() => setSelectedStatus(selectedStatus === 'warning' ? 'all' : 'warning')}
-            className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+            className={`p-3 rounded-2xl border transition-all cursor-pointer ${
               selectedStatus === 'warning'
                 ? 'bg-amber-950/40 border-amber-500 shadow-lg shadow-amber-500/10'
                 : 'bg-neutral-900/60 border-neutral-800 hover:border-amber-900/60'
@@ -609,14 +609,14 @@ export default function MaintenanceDashboard() {
               <span className="text-xs font-bold text-amber-400">Atenção / Troca Próxima</span>
               <AlertTriangle size={16} className="text-amber-500" />
             </div>
-            <p className="text-2xl sm:text-3xl font-black text-amber-400">{metrics.warning}</p>
-            <span className="text-[11px] text-amber-400/70">Dentro do prazo de alerta</span>
+            <p className="text-xl sm:text-2xl font-black text-amber-400">{metrics.warning}</p>
+            <span className="text-[10px] text-amber-400/70">Dentro do prazo de alerta</span>
           </div>
 
           {/* OK */}
           <div
             onClick={() => setSelectedStatus(selectedStatus === 'ok' ? 'all' : 'ok')}
-            className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+            className={`p-3 rounded-2xl border transition-all cursor-pointer ${
               selectedStatus === 'ok'
                 ? 'bg-emerald-950/40 border-emerald-500 shadow-lg shadow-emerald-500/10'
                 : 'bg-neutral-900/60 border-neutral-800 hover:border-emerald-900/60'
@@ -626,23 +626,23 @@ export default function MaintenanceDashboard() {
               <span className="text-xs font-bold text-emerald-400">Em Dia (OK)</span>
               <CheckCircle2 size={16} className="text-emerald-500" />
             </div>
-            <p className="text-2xl sm:text-3xl font-black text-emerald-400">{metrics.ok}</p>
-            <span className="text-[11px] text-emerald-400/70">Dentro da vida útil</span>
+            <p className="text-xl sm:text-2xl font-black text-emerald-400">{metrics.ok}</p>
+            <span className="text-[10px] text-emerald-400/70">Dentro da vida útil</span>
           </div>
         </section>
 
         {/* Filter & Search Bar */}
-        <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 mb-6 space-y-3">
-          <div className="flex flex-col md:flex-row gap-3">
+        <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-3 mb-4 space-y-2">
+          <div className="flex flex-col md:flex-row gap-2">
             {/* Search Input */}
             <div className="relative flex-1">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500" size={18} />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" size={16} />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="Buscar componente, máquina, setor ou mecânico..."
-                className="w-full bg-neutral-950 border border-neutral-800 focus:border-orange-500 rounded-xl py-2.5 pl-10 pr-4 text-sm text-neutral-200 placeholder-neutral-500 outline-none transition-colors"
+                className="w-full bg-neutral-950 border border-neutral-800 focus:border-orange-500 rounded-xl py-1.5 pl-9 pr-3 text-xs text-neutral-200 placeholder-neutral-500 outline-none transition-colors"
               />
             </div>
 
@@ -725,7 +725,7 @@ export default function MaintenanceDashboard() {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {filteredItems.map((item) => {
               const isOverdue = item.status === 'OVERDUE';
               const isWarning = item.status === 'WARNING';
@@ -734,7 +734,7 @@ export default function MaintenanceDashboard() {
               return (
                 <div
                   key={item.id}
-                  className={`bg-neutral-900 rounded-2xl border p-4 sm:p-5 flex flex-col justify-between transition-all hover:shadow-xl ${
+                  className={`bg-neutral-900 rounded-2xl border p-3 flex flex-col justify-between transition-all hover:shadow-xl ${
                     isOverdue
                       ? 'border-red-500/60 bg-gradient-to-b from-red-950/20 to-neutral-900'
                       : isWarning
@@ -744,42 +744,42 @@ export default function MaintenanceDashboard() {
                 >
                   <div>
                     {/* Header: Sector & Status Badge */}
-                    <div className="flex items-start justify-between gap-2 mb-3">
+                    <div className="flex items-start justify-between gap-2 mb-2">
                       <div>
                         <span className="inline-block px-2.5 py-0.5 rounded-md text-[11px] font-bold uppercase tracking-wider bg-neutral-800 text-neutral-300 border border-neutral-700">
                           {item.sector}
                         </span>
-                        <h4 className="text-sm font-black text-orange-400 mt-1.5">
+                        <h4 className="text-[13px] font-black text-orange-400 mt-1">
                           {item.machine}
                         </h4>
                       </div>
 
                       {/* Status Badge */}
                       {isOverdue && (
-                        <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-red-500 text-white shadow-md shadow-red-500/20">
-                          <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                        <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-black bg-red-500 text-white shadow-md shadow-red-500/20">
+                          <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
                           🔴 Vencido
                         </span>
                       )}
                       {isWarning && (
-                        <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20">
-                          🟡 Troca Próxima
+                        <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-black bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20">
+                          🟡 Próxima
                         </span>
                       )}
                       {isOk && (
-                        <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                          🟢 OK (Em Dia)
+                        <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                          🟢 OK
                         </span>
                       )}
                     </div>
 
                     {/* Component Name */}
-                    <h3 className="text-base font-bold text-neutral-100 leading-snug mb-3">
+                    <h3 className="text-[15px] font-bold text-neutral-100 leading-snug mb-2">
                       {item.component_name}
                     </h3>
 
                     {/* Progress Bar of Lifespan */}
-                    <div className="mb-4">
+                    <div className="mb-3">
                       <div className="flex justify-between text-[11px] text-neutral-400 mb-1">
                         <span>Vida útil consumida</span>
                         <span className="font-bold text-neutral-300">
@@ -801,7 +801,7 @@ export default function MaintenanceDashboard() {
                     </div>
 
                     {/* Meta Dates Grid */}
-                    <div className="grid grid-cols-2 gap-2 bg-neutral-950/60 p-3 rounded-xl border border-neutral-800/80 text-xs mb-3">
+                    <div className="grid grid-cols-2 gap-2 bg-neutral-950/60 p-2 rounded-xl border border-neutral-800/80 text-[11px] mb-2">
                       <div>
                         <span className="text-neutral-500 block text-[10px] uppercase font-semibold">
                           Última Troca

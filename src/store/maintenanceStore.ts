@@ -16,6 +16,7 @@ import {
 interface MaintenanceState {
   replacements: MaintenanceReplacement[];
   sectors: string[];
+  deletedIds: string[];
   isSyncing: boolean;
   cloudConnected: boolean;
   lastSyncedAt: string | null;
@@ -127,6 +128,7 @@ export const useMaintenanceStore = create<MaintenanceState>()(
     (set, get) => ({
       replacements: INITIAL_REPLACEMENTS,
       sectors: DEFAULT_SECTORS,
+      deletedIds: [],
       isSyncing: false,
       cloudConnected: true,
       lastSyncedAt: null,
@@ -190,14 +192,16 @@ export const useMaintenanceStore = create<MaintenanceState>()(
       deleteReplacement: async (id) => {
         set((state) => ({
           replacements: state.replacements.filter((r) => r.id !== id),
+          deletedIds: [...(state.deletedIds || []), id],
         }));
 
         try {
           await deleteMaintenanceReplacementCloud(id);
-          set({
+          set((state) => ({
             cloudConnected: true,
+            deletedIds: (state.deletedIds || []).filter(did => did !== id),
             lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-          });
+          }));
           return true;
         } catch (e) {
           console.error('Erro ao excluir peça na nuvem:', e);
@@ -215,13 +219,17 @@ export const useMaintenanceStore = create<MaintenanceState>()(
               // Preserva registros pendentes locais que ainda não foram persistidos
               const localPending = state.replacements.filter((r) => r.syncStatus === 'pending');
               const pendingMap = new Map(localPending.map((r) => [r.id, r]));
+              const deletedSet = new Set(state.deletedIds || []);
 
-              const merged = cloudData.map((cr: MaintenanceReplacement) => {
-                if (pendingMap.has(cr.id)) {
-                  return pendingMap.get(cr.id)!;
-                }
-                return { ...cr, syncStatus: 'synced' as const };
-              });
+              // Mescla os dados da nuvem, garantindo que itens deletados localmente (offline) não retornem
+              const merged = cloudData
+                .filter(cr => !deletedSet.has(cr.id))
+                .map((cr: MaintenanceReplacement) => {
+                  if (pendingMap.has(cr.id)) {
+                    return pendingMap.get(cr.id)!;
+                  }
+                  return { ...cr, syncStatus: 'synced' as const };
+                });
 
               // Adiciona locais pendentes que não estão no cloud
               const cloudIds = new Set(cloudData.map((cr: any) => cr.id));
@@ -235,8 +243,8 @@ export const useMaintenanceStore = create<MaintenanceState>()(
               };
             });
 
-            // Se houver pendências locais, tenta sincronizar em segundo plano
-            const hasPending = get().replacements.some((r) => r.syncStatus === 'pending');
+            // Se houver pendências locais (ou deleções), tenta sincronizar em segundo plano
+            const hasPending = get().replacements.some((r) => r.syncStatus === 'pending') || (get().deletedIds || []).length > 0;
             if (hasPending) {
               get().syncPendingReplacements();
             }
@@ -251,10 +259,14 @@ export const useMaintenanceStore = create<MaintenanceState>()(
 
       syncPendingReplacements: async () => {
         const pending = get().replacements.filter((r) => r.syncStatus === 'pending');
-        if (pending.length === 0) return true;
+        const pendingDeletes = get().deletedIds || [];
+        
+        if (pending.length === 0 && pendingDeletes.length === 0) return true;
 
         set({ isSyncing: true });
         let hasError = false;
+        
+        // Sincroniza novos/editados
         for (const item of pending) {
           try {
             await saveMaintenanceReplacementCloud(item);
@@ -268,6 +280,20 @@ export const useMaintenanceStore = create<MaintenanceState>()(
             hasError = true;
           }
         }
+
+        // Sincroniza deleções pendentes (quando o usuário deletou estando offline)
+        for (const delId of pendingDeletes) {
+          try {
+            await deleteMaintenanceReplacementCloud(delId);
+            set((state) => ({
+              deletedIds: (state.deletedIds || []).filter(id => id !== delId)
+            }));
+          } catch (err) {
+            console.error('Erro ao sincronizar exclusão pendente:', delId, err);
+            hasError = true;
+          }
+        }
+
         set({
           isSyncing: false,
           cloudConnected: !hasError,
@@ -360,6 +386,7 @@ export const useMaintenanceStore = create<MaintenanceState>()(
       partialize: (state) => ({
         replacements: state.replacements,
         sectors: state.sectors,
+        deletedIds: state.deletedIds || [],
       }),
       onRehydrateStorage: () => (state) => {
         if (state) {

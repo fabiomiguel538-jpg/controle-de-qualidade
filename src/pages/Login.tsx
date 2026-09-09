@@ -356,33 +356,6 @@ export default function Login() {
                   </>
                 )}
               </button>
-
-              {/* Acesso rápido 1-clique para Manutenção */}
-              {selectedPanel === 'manutencao' && (
-                <div className="pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      login({
-                        id: 'mecanico1',
-                        name: 'Mecânico 1',
-                        email: 'mecanico1',
-                        role: 'mechanic',
-                        token: 'mock-jwt-token',
-                        panel: 'manutencao',
-                      });
-                      navigate('/manutencao', { replace: true });
-                    }}
-                    className="w-full py-3 px-4 bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-300 font-bold text-xs sm:text-sm rounded-xl border border-emerald-700/60 flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-[0.985]"
-                  >
-                    <Zap size={16} className="text-emerald-400" />
-                    <span>⚡ Entrar Direto no Painel de Manutenção (1 Clique)</span>
-                  </button>
-                  <p className="text-[11px] text-neutral-500 text-center mt-2">
-                    Acesso direto habilitado para equipes móveis e celulares de chão de fábrica.
-                  </p>
-                </div>
-              )}
             </form>
           </div>
         )}
