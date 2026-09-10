@@ -45,6 +45,8 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
   const [lossObs, setLossObs] = useState<string>('');
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
   const [isEditingFinalized, setIsEditingFinalized] = useState(searchParams.get('edit') === 'true');
+  const [customThickMin, setCustomThickMin] = useState<string>('');
+  const [customThickMax, setCustomThickMax] = useState<string>('');
 
   useEffect(() => {
     if (id) {
@@ -322,8 +324,19 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
     setTimeout(() => setSyncFeedback(null), 3000);
   };
 
-  // Helper para gerar número aleatório de espessura próximo ao valor base (+/- 0.1 a 0.2 mm)
+  // Helper para gerar número aleatório de espessura próximo ao valor base (+/- 0.1 a 0.2 mm) ou nos limites customizados (se Lider 2)
   const generateCloseThicknessValue = (base: number): number => {
+    const minStr = customThickMin.replace(',', '.');
+    const maxStr = customThickMax.replace(',', '.');
+    const minVal = parseFloat(minStr);
+    const maxVal = parseFloat(maxStr);
+
+    if (!isNaN(minVal) && !isNaN(maxVal) && minVal <= maxVal) {
+      const range = Math.round((maxVal - minVal) * 10);
+      const randInt = Math.floor(Math.random() * (range + 1));
+      return Math.round((minVal * 10) + randInt) / 10;
+    }
+
     if (base <= 0) return 0;
     const deltas = [-0.2, -0.1, -0.1, 0, 0, 0, 0.1, 0.1, 0.2];
     const delta = deltas[Math.floor(Math.random() * deltas.length)];
@@ -3280,6 +3293,29 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
                     >
                       <Clock size={12} className="mr-1 text-orange-500" /> Horários Turno {report.shift}
                     </button>
+
+                    {isLiderMatriz2 && (
+                      <div className="flex items-center gap-1 ml-1 bg-purple-50/70 px-2 py-1 rounded-md border border-purple-200" title="Limites para geração automática de espessura">
+                        <span className="text-[10px] font-bold text-purple-800">Limites:</span>
+                        <input
+                          type="number"
+                          step="0.1"
+                          placeholder="Min"
+                          value={customThickMin}
+                          onChange={(e) => setCustomThickMin(e.target.value)}
+                          className="w-12 text-[11px] font-mono px-1 py-0.5 border border-purple-300 rounded focus:outline-none focus:border-purple-500 bg-white"
+                        />
+                        <span className="text-[10px] text-purple-500 font-bold">-</span>
+                        <input
+                          type="number"
+                          step="0.1"
+                          placeholder="Max"
+                          value={customThickMax}
+                          onChange={(e) => setCustomThickMax(e.target.value)}
+                          className="w-12 text-[11px] font-mono px-1 py-0.5 border border-purple-300 rounded focus:outline-none focus:border-purple-500 bg-white"
+                        />
+                      </div>
+                    )}
                     
                     {isLiderMatriz2 && report.thickness.length > 0 && (
                       <button 

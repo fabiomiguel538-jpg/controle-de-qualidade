@@ -190,18 +190,25 @@ export const useMaintenanceStore = create<MaintenanceState>()(
       },
 
       deleteReplacement: async (id) => {
-        set((state) => ({
-          replacements: state.replacements.filter((r) => r.id !== id),
-          deletedIds: [...(state.deletedIds || []), id],
-        }));
+        set((state) => {
+          const currentDeleted = Array.isArray(state.deletedIds) ? state.deletedIds : [];
+          return {
+            replacements: state.replacements.filter((r) => r.id !== id),
+            deletedIds: [...currentDeleted, id],
+          };
+        });
 
         try {
           await deleteMaintenanceReplacementCloud(id);
-          set((state) => ({
-            cloudConnected: true,
-            deletedIds: (state.deletedIds || []).filter(did => did !== id),
-            lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-          }));
+          set((state) => {
+            return {
+              cloudConnected: true,
+              // Mantemos o id na lista de excluídos para garantir que fetchReplacements
+              // não o traga de volta caso aconteça uma race condition com outro cliente
+              // ou cache da API
+              lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            };
+          });
           return true;
         } catch (e) {
           console.error('Erro ao excluir peça na nuvem:', e);
@@ -285,9 +292,7 @@ export const useMaintenanceStore = create<MaintenanceState>()(
         for (const delId of pendingDeletes) {
           try {
             await deleteMaintenanceReplacementCloud(delId);
-            set((state) => ({
-              deletedIds: (state.deletedIds || []).filter(id => id !== delId)
-            }));
+            // Mantemos o id na lista para evitar race conditions com fetchReplacements
           } catch (err) {
             console.error('Erro ao sincronizar exclusão pendente:', delId, err);
             hasError = true;
