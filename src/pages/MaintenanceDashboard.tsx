@@ -125,6 +125,12 @@ export default function MaintenanceDashboard() {
         try {
           const payload = JSON.parse(event.data);
           if (payload && payload.type !== 'CONNECTED') {
+            if (payload.type === 'REPLACEMENT_DELETED' && payload.id) {
+              useMaintenanceStore.setState((state) => ({
+                replacements: state.replacements.filter((r) => r.id !== payload.id),
+                deletedIds: Array.from(new Set([...(state.deletedIds || []), payload.id])),
+              }));
+            }
             fetchReplacements();
             fetchSectors();
           }

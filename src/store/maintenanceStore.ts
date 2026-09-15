@@ -40,86 +40,7 @@ const daysAgo = (days: number): string => {
   return d.toISOString().split('T')[0];
 };
 
-const INITIAL_REPLACEMENTS: MaintenanceReplacement[] = [
-  {
-    id: 'maint-seed-1',
-    sector: 'Prensas',
-    machine: 'Prensa 01',
-    component_name: 'Correia B-75 Exaustor de Pó',
-    replacement_date: daysAgo(54),
-    mechanic_name: 'Mecânico 1',
-    lifespan_days: 60,
-    alert_lead_days: 7,
-    notes: 'Correia trocada após vibração no exaustor de despoeiramento. Verificar tensão.',
-    created_at: new Date().toISOString(),
-    syncStatus: 'synced',
-  },
-  {
-    id: 'maint-seed-2',
-    sector: 'Prensas',
-    machine: 'Prensa 02',
-    component_name: 'Rolamento 6205 DDU Polia Principal',
-    replacement_date: daysAgo(98),
-    mechanic_name: 'Mecânico 1',
-    lifespan_days: 90,
-    alert_lead_days: 10,
-    notes: 'Apresentou aquecimento na última inspeção térmica. Troca emergencial requerida.',
-    created_at: new Date().toISOString(),
-    syncStatus: 'synced',
-  },
-  {
-    id: 'maint-seed-3',
-    sector: 'Linha de Esmaltação',
-    machine: 'Linha 02 - Esmaltação',
-    component_name: 'Bomba Diafragma Graco 1.5"',
-    replacement_date: daysAgo(15),
-    mechanic_name: 'Mecânico 1',
-    lifespan_days: 120,
-    alert_lead_days: 15,
-    notes: 'Substituição das esferas e diafragmas de PTFE. Pressão nominal 4.5 bar.',
-    created_at: new Date().toISOString(),
-    syncStatus: 'synced',
-  },
-  {
-    id: 'maint-seed-4',
-    sector: 'Forno',
-    machine: 'Forno Contínuo 01',
-    component_name: 'Roletes Cerâmicos Zona de Queima (Mód. 14)',
-    replacement_date: daysAgo(176),
-    mechanic_name: 'Mecânico 1',
-    lifespan_days: 180,
-    alert_lead_days: 14,
-    notes: 'Roletes com acúmulo de esmalte e leve ovalização. Programar parada de turno.',
-    created_at: new Date().toISOString(),
-    syncStatus: 'synced',
-  },
-  {
-    id: 'maint-seed-5',
-    sector: 'Retífica',
-    machine: 'Retificadora Linha 01',
-    component_name: 'Rebolo Diamantado Bisotador Grana 120',
-    replacement_date: daysAgo(35),
-    mechanic_name: 'Mecânico 1',
-    lifespan_days: 30,
-    alert_lead_days: 5,
-    notes: 'Rebolo atingiu espessura mínima de segurança. Necessário ajuste e troca imediata.',
-    created_at: new Date().toISOString(),
-    syncStatus: 'synced',
-  },
-  {
-    id: 'maint-seed-6',
-    sector: 'Linha de Esmaltação',
-    machine: 'Campana 01',
-    component_name: 'Correia Dentada T10 da Campana',
-    replacement_date: daysAgo(8),
-    mechanic_name: 'Mecânico 1',
-    lifespan_days: 90,
-    alert_lead_days: 10,
-    notes: 'Alinhamento verificado com laser. Funcionamento perfeitamente suave.',
-    created_at: new Date().toISOString(),
-    syncStatus: 'synced',
-  },
-];
+const INITIAL_REPLACEMENTS: MaintenanceReplacement[] = [];
 
 const DEFAULT_SECTORS = ['Prensas', 'Linha de Esmaltação', 'Forno', 'Retífica'];
 
@@ -194,20 +115,15 @@ export const useMaintenanceStore = create<MaintenanceState>()(
           const currentDeleted = Array.isArray(state.deletedIds) ? state.deletedIds : [];
           return {
             replacements: state.replacements.filter((r) => r.id !== id),
-            deletedIds: [...currentDeleted, id],
+            deletedIds: Array.from(new Set([...currentDeleted, id])),
           };
         });
 
         try {
           await deleteMaintenanceReplacementCloud(id);
-          set((state) => {
-            return {
-              cloudConnected: true,
-              // Mantemos o id na lista de excluídos para garantir que fetchReplacements
-              // não o traga de volta caso aconteça uma race condition com outro cliente
-              // ou cache da API
-              lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-            };
+          set({
+            cloudConnected: true,
+            lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
           });
           return true;
         } catch (e) {
@@ -223,14 +139,17 @@ export const useMaintenanceStore = create<MaintenanceState>()(
           const cloudData = await fetchMaintenanceReplacementsCloud();
           if (Array.isArray(cloudData)) {
             set((state) => {
-              // Preserva registros pendentes locais que ainda não foram persistidos
-              const localPending = state.replacements.filter((r) => r.syncStatus === 'pending');
-              const pendingMap = new Map(localPending.map((r) => [r.id, r]));
               const deletedSet = new Set(state.deletedIds || []);
 
-              // Mescla os dados da nuvem, garantindo que itens deletados localmente (offline) não retornem
+              // Preserva registros pendentes locais que ainda não foram persistidos e não foram excluídos
+              const localPending = state.replacements.filter(
+                (r) => r.syncStatus === 'pending' && !deletedSet.has(r.id) && !r.id.startsWith('maint-seed-')
+              );
+              const pendingMap = new Map(localPending.map((r) => [r.id, r]));
+
+              // Mescla os dados da nuvem, garantindo que itens deletados ou seeds antigos nunca retornem
               const merged = cloudData
-                .filter(cr => !deletedSet.has(cr.id))
+                .filter((cr) => !deletedSet.has(cr.id) && !cr.id.startsWith('maint-seed-'))
                 .map((cr: MaintenanceReplacement) => {
                   if (pendingMap.has(cr.id)) {
                     return pendingMap.get(cr.id)!;
@@ -240,7 +159,7 @@ export const useMaintenanceStore = create<MaintenanceState>()(
 
               // Adiciona locais pendentes que não estão no cloud
               const cloudIds = new Set(cloudData.map((cr: any) => cr.id));
-              const newLocalOnly = localPending.filter((lr) => !cloudIds.has(lr.id));
+              const newLocalOnly = localPending.filter((lr) => !cloudIds.has(lr.id) && !deletedSet.has(lr.id));
 
               return {
                 replacements: [...newLocalOnly, ...merged],
@@ -265,14 +184,24 @@ export const useMaintenanceStore = create<MaintenanceState>()(
       },
 
       syncPendingReplacements: async () => {
-        const pending = get().replacements.filter((r) => r.syncStatus === 'pending');
+        const deletedSet = new Set(get().deletedIds || []);
+        const pending = get().replacements.filter(
+          (r) => r.syncStatus === 'pending' && !deletedSet.has(r.id) && !r.id.startsWith('maint-seed-')
+        );
         const pendingDeletes = get().deletedIds || [];
-        
+
+        // Garante que nenhum item deletado permaneça no estado replacements
+        set((state) => ({
+          replacements: state.replacements.filter(
+            (r) => !deletedSet.has(r.id) && !r.id.startsWith('maint-seed-')
+          ),
+        }));
+
         if (pending.length === 0 && pendingDeletes.length === 0) return true;
 
         set({ isSyncing: true });
         let hasError = false;
-        
+
         // Sincroniza novos/editados
         for (const item of pending) {
           try {
@@ -395,6 +324,13 @@ export const useMaintenanceStore = create<MaintenanceState>()(
       }),
       onRehydrateStorage: () => (state) => {
         if (state) {
+          // Limpa quaisquer sementes antigas ou itens previamente deletados do storage local
+          const deletedSet = new Set(state.deletedIds || []);
+          if (Array.isArray(state.replacements)) {
+            state.replacements = state.replacements.filter(
+              (r) => !r.id.startsWith('maint-seed-') && !deletedSet.has(r.id)
+            );
+          }
           state.cloudConnected = true;
           state.isSyncing = false;
         }
