@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link, useSearchParams } from 'react-router-dom';
 import { useReportStore, Report, getLocalDateString } from '../store/reportStore';
 import { useAuthStore } from '../store/authStore';
-import { ChevronLeft, Plus, Trash2, CheckCircle, Save, FileDown, ArrowRight, Clock, UploadCloud, Check, RefreshCw, Sparkles, Pencil, Edit3, RotateCcw, AlertCircle, Eraser, ShieldAlert, Layers, LayoutGrid, ChevronRight, Package, PackageX, Truck, Boxes, Calendar, Eye, Copy, ArrowDown, Tag, AlertTriangle } from 'lucide-react';
+import { ChevronLeft, Plus, Trash2, CheckCircle, Save, FileDown, ArrowRight, Clock, UploadCloud, Check, RefreshCw, Sparkles, Pencil, Edit3, RotateCcw, AlertCircle, Eraser, ShieldAlert, Layers, LayoutGrid, ChevronRight, Package, PackageX, Truck, Boxes, Calendar, Eye, Copy, ArrowDown, Tag, AlertTriangle, Sliders } from 'lucide-react';
 import { DEFECTS_LIST, SHIFT_HOURS } from '../lib/constants';
 import { generatePDF } from '../lib/pdfGenerator';
 import { canUserAccessReport } from '../lib/permissions';
@@ -47,6 +47,12 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
   const [isEditingFinalized, setIsEditingFinalized] = useState(searchParams.get('edit') === 'true');
   const [customThickMin, setCustomThickMin] = useState<string>('');
   const [customThickMax, setCustomThickMax] = useState<string>('');
+  const [customWarpMin, setCustomWarpMin] = useState<string>('');
+  const [customWarpMax, setCustomWarpMax] = useState<string>('');
+  const [customCCMin, setCustomCCMin] = useState<string>('');
+  const [customCCMax, setCustomCCMax] = useState<string>('');
+  const [customCLMin, setCustomCLMin] = useState<string>('');
+  const [customCLMax, setCustomCLMax] = useState<string>('');
 
   useEffect(() => {
     if (id) {
@@ -344,8 +350,50 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
     return result > 0 ? result : base;
   };
 
-  // Helper para gerar número aleatório de empeno e curvatura com variação maior de até 0,5 mm (+/- 0.1 a 0.5 mm)
-  const generateCloseValue = (base: number): number => {
+  // Helper para obter os limites customizados de cada parâmetro (Líder Matriz 2)
+  const getCustomLimits = (key: 'warp' | 'centralCurvature' | 'lateralCurvature') => {
+    let minStr = '';
+    let maxStr = '';
+    if (key === 'warp') {
+      minStr = customWarpMin;
+      maxStr = customWarpMax;
+    } else if (key === 'centralCurvature') {
+      minStr = customCCMin;
+      maxStr = customCCMax;
+    } else if (key === 'lateralCurvature') {
+      minStr = customCLMin;
+      maxStr = customCLMax;
+    }
+    const cleanMin = parseFloat(minStr.replace(',', '.'));
+    const cleanMax = parseFloat(maxStr.replace(',', '.'));
+    if (!isNaN(cleanMin) && !isNaN(cleanMax) && cleanMin <= cleanMax) {
+      return { min: cleanMin, max: cleanMax };
+    }
+    return null;
+  };
+
+  const hasCustomThicknessLimits = () => {
+    if (!isLiderMatriz2) return false;
+    const minStr = customThickMin.replace(',', '.');
+    const maxStr = customThickMax.replace(',', '.');
+    const minVal = parseFloat(minStr);
+    const maxVal = parseFloat(maxStr);
+    return !isNaN(minVal) && !isNaN(maxVal) && minVal <= maxVal;
+  };
+
+  const hasCustomLimits = (key: 'warp' | 'centralCurvature' | 'lateralCurvature') => {
+    return isLiderMatriz2 && getCustomLimits(key) !== null;
+  };
+
+  // Helper para gerar número aleatório de empeno e curvatura com variação maior de até 0,5 mm (+/- 0.1 a 0.5 mm) ou dentro dos limites do Líder Matriz 2
+  const generateParamValue = (key: 'warp' | 'centralCurvature' | 'lateralCurvature', base: number): number => {
+    const limits = isLiderMatriz2 ? getCustomLimits(key) : null;
+    if (limits) {
+      const range = Math.round((limits.max - limits.min) * 10);
+      const randInt = Math.floor(Math.random() * (range + 1));
+      return Math.round((limits.min * 10) + randInt) / 10;
+    }
+
     if (base === 0) return 0;
     // Variações aleatórias de até 0.5 mm em torno do valor base:
     const deltas = [-0.5, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.4, 0.5];
@@ -355,7 +403,11 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
     return result;
   };
 
-  // Preenche as peças 2 a 7 de uma medição com números próximos da 1ª peça (PC1)
+  const generateCloseValue = (base: number): number => {
+    return generateParamValue('warp', base);
+  };
+
+  // Preenche as peças 2 a 7 de uma medição com números próximos da 1ª peça (PC1) ou nos limites configurados
   const handleAutoFillPieces = (key: 'warp' | 'centralCurvature' | 'lateralCurvature', rowIndex: number) => {
     const list = [...(report as any)[key]];
     const row = { ...list[rowIndex] };
@@ -371,18 +423,30 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
       row.pc1_s = [...pc1Sides];
     }
 
+    const hasLimits = hasCustomLimits(key);
     const baseMax = Math.max(...pc1Sides.map((v) => v || 0));
-    if (baseMax === 0 && (!row.pc1 || row.pc1 === 0)) {
+    if (baseMax === 0 && (!row.pc1 || row.pc1 === 0) && !hasLimits) {
       setSyncFeedback('⚠️ Digite a medida da Peça 1 (L1..L4) primeiro para gerar as outras!');
       setTimeout(() => setSyncFeedback(null), 3500);
       return;
     }
 
+    // Se limites foram definidos e a Peça 1 estava vazia, gera também a Peça 1
+    if (hasLimits && !pc1Sides.some((v) => (v || 0) > 0)) {
+      pc1Sides = [
+        generateParamValue(key, 0),
+        generateParamValue(key, 0),
+        generateParamValue(key, 0),
+        generateParamValue(key, 0),
+      ];
+      row.pc1_s = [...pc1Sides];
+      row.pc1 = Math.max(...pc1Sides);
+    }
+
     const cols = ['pc2', 'pc3', 'pc4', 'pc5', 'pc6', 'pc7'];
     cols.forEach((col) => {
       const newSides = pc1Sides.map((baseVal) => {
-        if (!baseVal || baseVal === 0) return 0;
-        return generateCloseValue(baseVal);
+        return generateParamValue(key, baseVal);
       });
       row[`${col}_s`] = newSides;
       row[col] = Math.max(...newSides.map((v) => v || 0));
@@ -390,14 +454,15 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
 
     list[rowIndex] = row;
     update({ [key]: list });
-    setSyncFeedback('✨ Peças 2 a 7 preenchidas automaticamente com números próximos da 1ª peça!');
+    setSyncFeedback('✨ Peças 2 a 7 preenchidas com sucesso!');
     setTimeout(() => setSyncFeedback(null), 3000);
   };
 
-  // Preenche as peças 2 a 7 em todas as medições que possuam a Peça 1 preenchida
+  // Preenche as peças 2 a 7 em todas as medições que possuam a Peça 1 preenchida (ou todas se limites ativos)
   const handleAutoFillAllPieces = (key: 'warp' | 'centralCurvature' | 'lateralCurvature') => {
     const list = [...(report as any)[key]];
     let filledCount = 0;
+    const hasLimits = hasCustomLimits(key);
 
     const updated = list.map((item) => {
       const row = { ...item };
@@ -411,13 +476,23 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
       }
 
       const baseMax = Math.max(...pc1Sides.map((v) => v || 0));
-      if (baseMax > 0 || (row.pc1 || 0) > 0) {
+      if (baseMax > 0 || (row.pc1 || 0) > 0 || hasLimits) {
         filledCount++;
+        if (hasLimits && !pc1Sides.some((v) => (v || 0) > 0)) {
+          pc1Sides = [
+            generateParamValue(key, 0),
+            generateParamValue(key, 0),
+            generateParamValue(key, 0),
+            generateParamValue(key, 0),
+          ];
+          row.pc1_s = [...pc1Sides];
+          row.pc1 = Math.max(...pc1Sides);
+        }
+
         const cols = ['pc2', 'pc3', 'pc4', 'pc5', 'pc6', 'pc7'];
         cols.forEach((col) => {
           const newSides = pc1Sides.map((baseVal) => {
-            if (!baseVal || baseVal === 0) return 0;
-            return generateCloseValue(baseVal);
+            return generateParamValue(key, baseVal);
           });
           row[`${col}_s`] = newSides;
           row[col] = Math.max(...newSides.map((v) => v || 0));
@@ -517,17 +592,33 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
   const handleAutoFillThicknessPieces = (rowIndex: number) => {
     const list = [...report.thickness];
     const row: any = { ...list[rowIndex] };
+    const hasLimits = hasCustomThicknessLimits();
 
     let p1Sides = getThicknessSides(row, 'pc1');
     let p1Val = getThicknessVal(row, 'pc1');
 
-    if (p1Val === 0 && !p1Sides.some(v => (v || 0) > 0)) {
+    if (p1Val === 0 && !p1Sides.some(v => (v || 0) > 0) && !hasLimits) {
       setSyncFeedback('⚠️ Digite a medida da Peça 1 primeiro para gerar as demais peças!');
       setTimeout(() => setSyncFeedback(null), 3500);
       return;
     }
 
-    if (!p1Sides.some(v => (v || 0) > 0) && p1Val > 0) {
+    // Se limites foram definidos e a Peça 1 estava vazia, gera também a Peça 1
+    if (hasLimits && !p1Sides.some(v => (v || 0) > 0) && p1Val === 0) {
+      p1Sides = [
+        generateCloseThicknessValue(0),
+        generateCloseThicknessValue(0),
+        generateCloseThicknessValue(0),
+        generateCloseThicknessValue(0),
+      ];
+      row.pc1_s = p1Sides;
+      const validP1 = p1Sides.filter(v => (v || 0) > 0);
+      row.pc1 = validP1.length > 0 ? Math.round((validP1.reduce((a, b) => a + b, 0) / validP1.length) * 10) / 10 : 0;
+      row.l1 = p1Sides[0] || 0;
+      row.l2 = p1Sides[1] || 0;
+      row.l3 = p1Sides[2] || 0;
+      row.l4 = p1Sides[3] || 0;
+    } else if (!p1Sides.some(v => (v || 0) > 0) && p1Val > 0) {
       p1Sides = [p1Val, p1Val, p1Val, p1Val];
       row.pc1_s = p1Sides;
       row.pc1 = p1Val;
@@ -538,7 +629,6 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
     
     cols.forEach((col) => {
       const newSides = p1Sides.map(base => {
-        if (!base || base === 0) return 0;
         return generateCloseThicknessValue(base);
       });
       row[`${col}_s`] = newSides;
@@ -548,7 +638,7 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
 
     list[rowIndex] = row;
     update({ thickness: list });
-    setSyncFeedback('✨ Demais peças preenchidas com números próximos da 1ª peça!');
+    setSyncFeedback('✨ Demais peças preenchidas com sucesso!');
     setTimeout(() => setSyncFeedback(null), 3000);
   };
 
@@ -556,15 +646,30 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
     const list = [...report.thickness];
     let filledCount = 0;
     const numPieces = report.piecesToMeasure || 7;
+    const hasLimits = hasCustomThicknessLimits();
 
     const updated = list.map(item => {
       const row: any = { ...item };
       let p1Sides = getThicknessSides(row, 'pc1');
       let p1Val = getThicknessVal(row, 'pc1');
 
-      if (p1Val > 0 || p1Sides.some(v => (v || 0) > 0)) {
+      if (p1Val > 0 || p1Sides.some(v => (v || 0) > 0) || hasLimits) {
         filledCount++;
-        if (!p1Sides.some(v => (v || 0) > 0) && p1Val > 0) {
+        if (hasLimits && !p1Sides.some(v => (v || 0) > 0) && p1Val === 0) {
+          p1Sides = [
+            generateCloseThicknessValue(0),
+            generateCloseThicknessValue(0),
+            generateCloseThicknessValue(0),
+            generateCloseThicknessValue(0),
+          ];
+          row.pc1_s = p1Sides;
+          const validP1 = p1Sides.filter(v => (v || 0) > 0);
+          row.pc1 = validP1.length > 0 ? Math.round((validP1.reduce((a, b) => a + b, 0) / validP1.length) * 10) / 10 : 0;
+          row.l1 = p1Sides[0] || 0;
+          row.l2 = p1Sides[1] || 0;
+          row.l3 = p1Sides[2] || 0;
+          row.l4 = p1Sides[3] || 0;
+        } else if (!p1Sides.some(v => (v || 0) > 0) && p1Val > 0) {
           p1Sides = [p1Val, p1Val, p1Val, p1Val];
           row.pc1_s = p1Sides;
           row.pc1 = p1Val;
@@ -572,7 +677,6 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
         const cols = Array.from({ length: numPieces - 1 }).map((_, i) => `pc${i + 2}`);
         cols.forEach((col) => {
           const newSides = p1Sides.map(base => {
-            if (!base || base === 0) return 0;
             return generateCloseThicknessValue(base);
           });
           row[`${col}_s`] = newSides;
@@ -590,7 +694,7 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
     }
 
     update({ thickness: updated });
-    setSyncFeedback(`✨ Peças 2 e 3 geradas em ${filledCount} medição(ões) de Espessura!`);
+    setSyncFeedback(`✨ Peças geradas em ${filledCount} medição(ões) de Espessura!`);
     setTimeout(() => setSyncFeedback(null), 3000);
   };
 
@@ -852,14 +956,9 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
 
 
 
-  // Helper para gerar número aleatório de empeno/curvatura com variação maior de até 0,5 mm (+/- 0.1 a 0.5 mm)
+  // Helper para gerar número aleatório de empeno/curvatura com variação maior de até 0,5 mm (+/- 0.1 a 0.5 mm) ou baseado nos limites
   const generateCloseWarpValue = (base: number): number => {
-    if (base <= 0) return 0;
-    const deltas = [-0.5, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.4, 0.5];
-    const delta = deltas[Math.floor(Math.random() * deltas.length)];
-    let result = Math.round((base + delta) * 10) / 10;
-    if (result <= 0 && base > 0) result = 0.1;
-    return result;
+    return generateParamValue('warp', base);
   };
 
   // Preenche todas as horas de Espessura com números aleatórios próximos da 1ª medição
@@ -888,6 +987,7 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
       return;
     }
 
+    const isCustom = hasCustomThicknessLimits();
     const firstRow: any = { ...list[0] };
     let p1Sides = getThicknessSides(firstRow, 'pc1');
     let p1Val = getThicknessVal(firstRow, 'pc1');
@@ -903,13 +1003,27 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
       }
     }
 
-    if (!hasAnyPiece) {
-      setSyncFeedback('⚠️ Preencha a 1ª medição (ex: das 14h) para gerar as outras horas com números próximos!');
+    if (!hasAnyPiece && !isCustom) {
+      setSyncFeedback('⚠️ Preencha a 1ª medição (ex: das 14h) ou configure os limites para gerar as outras horas!');
       setTimeout(() => setSyncFeedback(null), 3500);
       return;
     }
 
-    if (!p1Sides.some(v => (v || 0) > 0) && p1Val > 0) {
+    if (isCustom && !p1Sides.some(v => (v || 0) > 0) && p1Val === 0) {
+      p1Sides = [
+        generateCloseThicknessValue(0),
+        generateCloseThicknessValue(0),
+        generateCloseThicknessValue(0),
+        generateCloseThicknessValue(0),
+      ];
+      firstRow.pc1_s = p1Sides;
+      const validP1 = p1Sides.filter(v => (v || 0) > 0);
+      firstRow.pc1 = validP1.length > 0 ? Math.round((validP1.reduce((a, b) => a + b, 0) / validP1.length) * 10) / 10 : 0;
+      firstRow.l1 = p1Sides[0] || 0;
+      firstRow.l2 = p1Sides[1] || 0;
+      firstRow.l3 = p1Sides[2] || 0;
+      firstRow.l4 = p1Sides[3] || 0;
+    } else if (!p1Sides.some(v => (v || 0) > 0) && p1Val > 0) {
       p1Sides = [p1Val, p1Val, p1Val, p1Val];
       firstRow.pc1_s = p1Sides;
       firstRow.pc1 = p1Val;
@@ -918,8 +1032,8 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
     for (let p = 1; p < numPieces; p++) {
       const col = `pc${p + 1}`;
       const curSides = getThicknessSides(firstRow, col);
-      if (!curSides.some(v => (v || 0) > 0)) {
-        const newSides = p1Sides.map(base => base > 0 ? generateCloseThicknessValue(base) : 0);
+      if (!curSides.some(v => (v || 0) > 0) || isCustom) {
+        const newSides = p1Sides.map(base => generateCloseThicknessValue(base));
         firstRow[`${col}_s`] = newSides;
         const valid = newSides.filter(v => (v || 0) > 0);
         firstRow[col] = valid.length > 0 ? Math.round((valid.reduce((a, b) => a + b, 0) / valid.length) * 10) / 10 : 0;
@@ -995,19 +1109,20 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
       return false;
     };
 
-    const hasWarp = checkRow0HasData(warpList);
-    const hasCC = checkRow0HasData(ccList);
-    const hasCL = checkRow0HasData(clList);
+    const hasWarp = checkRow0HasData(warpList) || hasCustomLimits('warp');
+    const hasCC = checkRow0HasData(ccList) || hasCustomLimits('centralCurvature');
+    const hasCL = checkRow0HasData(clList) || hasCustomLimits('lateralCurvature');
 
     if (!hasWarp && !hasCC && !hasCL) {
-      setSyncFeedback('⚠️ Preencha a 1ª medição (ex: das 14h) para gerar as outras horas com números próximos!');
+      setSyncFeedback('⚠️ Preencha a 1ª medição (ex: das 14h) ou configure os limites para gerar as outras horas!');
       setTimeout(() => setSyncFeedback(null), 3500);
       return;
     }
 
-    const processSectionWithRandomClose = (list: any[]) => {
+    const processSectionWithRandomClose = (list: any[], sectionKey: 'warp' | 'centralCurvature' | 'lateralCurvature') => {
       if (list.length === 0) return list;
       const firstRow: any = { ...list[0] };
+      const isCustom = hasCustomLimits(sectionKey);
       
       let refSides: number[] = [0, 0, 0, 0];
       for (let p = 0; p < numPieces; p++) {
@@ -1023,16 +1138,27 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
         }
       }
 
-      if (!refSides.some(v => v > 0)) {
+      if (!refSides.some(v => v > 0) && !isCustom) {
         return list;
+      }
+
+      if (!refSides.some(v => v > 0) && isCustom) {
+        refSides = [
+          generateParamValue(sectionKey, 0),
+          generateParamValue(sectionKey, 0),
+          generateParamValue(sectionKey, 0),
+          generateParamValue(sectionKey, 0),
+        ];
+        firstRow.pc1_s = [...refSides];
+        firstRow.pc1 = Math.max(...refSides);
       }
 
       for (let p = 0; p < numPieces; p++) {
         const col = `pc${p + 1}`;
         let s = Array.isArray(firstRow[`${col}_s`]) ? [...firstRow[`${col}_s`]] : [];
         while (s.length < 4) s.push(0);
-        if (!s.some(v => v > 0)) {
-          s = refSides.map(v => v > 0 ? generateCloseWarpValue(v) : 0);
+        if (!s.some(v => v > 0) || (isCustom && p > 0)) {
+          s = refSides.map(v => generateParamValue(sectionKey, v));
           firstRow[`${col}_s`] = s;
           firstRow[col] = Math.max(...s.map(v => v || 0));
         }
@@ -1047,7 +1173,7 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
           if (!baseSides.some((v: number) => (v || 0) > 0)) {
             baseSides = refSides;
           }
-          const newSides = baseSides.map((baseVal: number) => baseVal > 0 ? generateCloseWarpValue(baseVal) : 0);
+          const newSides = baseSides.map((baseVal: number) => generateParamValue(sectionKey, baseVal));
           row[`${col}_s`] = newSides;
           row[col] = Math.max(...newSides.map((v: number) => v || 0));
         }
@@ -1058,9 +1184,9 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
     };
 
     update({
-      warp: processSectionWithRandomClose(warpList),
-      centralCurvature: processSectionWithRandomClose(ccList),
-      lateralCurvature: processSectionWithRandomClose(clList),
+      warp: processSectionWithRandomClose(warpList, 'warp'),
+      centralCurvature: processSectionWithRandomClose(ccList, 'centralCurvature'),
+      lateralCurvature: processSectionWithRandomClose(clList, 'lateralCurvature'),
     });
 
     setSyncFeedback('✨ Todas as horas de Empeno e Curvaturas preenchidas com números aleatórios próximos!');
@@ -1406,6 +1532,102 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
               >
                 <Plus size={13} className="mr-1" /> Adicionar Medição
               </button>
+            </div>
+          )}
+
+          {/* Limites de Geração por Parâmetro (Líder Matriz 2) */}
+          {isLiderMatriz2 && !isLocked && (
+            <div className="mt-2.5 pt-2.5 border-t border-neutral-100 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1.5 text-neutral-700 font-bold text-[11px] bg-neutral-100 px-2 py-1 rounded-md border border-neutral-200">
+                  <Sliders size={12} className="text-orange-500" />
+                  <span>Limites de Geração (Líder 2):</span>
+                </div>
+
+                {/* Empeno */}
+                <div className="flex items-center gap-1 bg-amber-50 px-2 py-1 rounded-md border border-amber-300 shadow-2xs" title="Defina os limites mínimos e máximos para Empeno">
+                  <span className="text-[10px] font-bold text-amber-900">📐 Empeno:</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    placeholder="Mín"
+                    value={customWarpMin}
+                    onChange={(e) => setCustomWarpMin(e.target.value)}
+                    className="w-12 text-[11px] font-mono px-1 py-0.5 border border-amber-300 rounded focus:outline-none focus:border-amber-500 bg-white"
+                  />
+                  <span className="text-[10px] text-amber-600 font-bold">-</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    placeholder="Máx"
+                    value={customWarpMax}
+                    onChange={(e) => setCustomWarpMax(e.target.value)}
+                    className="w-12 text-[11px] font-mono px-1 py-0.5 border border-amber-300 rounded focus:outline-none focus:border-amber-500 bg-white"
+                  />
+                </div>
+
+                {/* Curvatura Central */}
+                <div className="flex items-center gap-1 bg-blue-50 px-2 py-1 rounded-md border border-blue-300 shadow-2xs" title="Defina os limites mínimos e máximos para Curvatura Central">
+                  <span className="text-[10px] font-bold text-blue-900">🔘 Curv. Central:</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    placeholder="Mín"
+                    value={customCCMin}
+                    onChange={(e) => setCustomCCMin(e.target.value)}
+                    className="w-12 text-[11px] font-mono px-1 py-0.5 border border-blue-300 rounded focus:outline-none focus:border-blue-500 bg-white"
+                  />
+                  <span className="text-[10px] text-blue-600 font-bold">-</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    placeholder="Máx"
+                    value={customCCMax}
+                    onChange={(e) => setCustomCCMax(e.target.value)}
+                    className="w-12 text-[11px] font-mono px-1 py-0.5 border border-blue-300 rounded focus:outline-none focus:border-blue-500 bg-white"
+                  />
+                </div>
+
+                {/* Curvatura Lateral */}
+                <div className="flex items-center gap-1 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-300 shadow-2xs" title="Defina os limites mínimos e máximos para Curvatura Lateral">
+                  <span className="text-[10px] font-bold text-emerald-900">↔️ Curv. Lateral:</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    placeholder="Mín"
+                    value={customCLMin}
+                    onChange={(e) => setCustomCLMin(e.target.value)}
+                    className="w-12 text-[11px] font-mono px-1 py-0.5 border border-emerald-300 rounded focus:outline-none focus:border-emerald-500 bg-white"
+                  />
+                  <span className="text-[10px] text-emerald-600 font-bold">-</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    placeholder="Máx"
+                    value={customCLMax}
+                    onChange={(e) => setCustomCLMax(e.target.value)}
+                    className="w-12 text-[11px] font-mono px-1 py-0.5 border border-emerald-300 rounded focus:outline-none focus:border-emerald-500 bg-white"
+                  />
+                </div>
+              </div>
+
+              {(customWarpMin || customWarpMax || customCCMin || customCCMax || customCLMin || customCLMax) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomWarpMin('');
+                    setCustomWarpMax('');
+                    setCustomCCMin('');
+                    setCustomCCMax('');
+                    setCustomCLMin('');
+                    setCustomCLMax('');
+                  }}
+                  className="text-[10px] font-semibold text-neutral-500 hover:text-red-600 underline cursor-pointer"
+                  title="Limpar limites configurados"
+                >
+                  Limpar limites
+                </button>
+              )}
             </div>
           )}
         </div>
