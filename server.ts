@@ -48,6 +48,115 @@ async function startServer() {
     res.json({ status: 'ok', dbConnected: !!process.env.DATABASE_URL });
   });
 
+  // Intelligent Data Matrix & GS1 Label extraction using Vision AI
+  app.post('/api/scan-datamatrix-image', async (req, res) => {
+    try {
+      const { imageBase64, mimeType = 'image/jpeg' } = req.body;
+      if (!imageBase64) {
+        return res.status(400).json({ error: 'Nenhuma imagem fornecida.' });
+      }
+
+      if (!process.env.GEMINI_API_KEY) {
+        return res.status(503).json({ error: 'Chave do Gemini não configurada no servidor.' });
+      }
+
+      const { GoogleGenAI } = await import('@google/genai');
+      const ai = new GoogleGenAI();
+
+      // Remove prefix like data:image/jpeg;base64, if present
+      const cleanBase64 = imageBase64.replace(/^data:[^;]+;base64,/, '');
+
+      const prompt = `Você é um leitor industrial especializado em etiquetas cerâmicas e códigos GS1 Data Matrix (incluindo telas do Scandit Demo ou etiquetas de paletes cerâmicos).
+Analise com máxima atenção a imagem fornecida.
+
+A imagem pode ser:
+1. Um código Data Matrix 2D gravado ou impresso em uma peça/etiqueta cerâmica.
+2. Uma captura de tela de um aplicativo de leitura como Scandit Demo com campos como:
+   - "02. GTIN of contained trade items" (ex: 07908482805010)
+   - "240. Additional product identification" -> TONALIDADE / TOM (onde começa com 240, ex: 4)
+   - "90. Information mutually agreed between trading partners" -> CALIBRE DIMENSIONAL (onde começa com 90, ex: 8)
+   - "10. Batch or lot number" -> LOTE DO PRODUTO (onde começa com 10, ex: 00000049)
+   - "37. Count of trade items" (quantidade de caixas, ex: 72)
+   - "3142. Area, square metres" (área m2, ex: 000219 -> 2.19)
+   - "00. Serial Shipping Container Code (SSCC)" (ex: 079084828017406718)
+   - Código concatenado puro: 0207908482805010240490810000000493772314200021900079084828017406718
+3. Uma etiqueta física impressa de palete ou caixa de cerâmica.
+
+Regras de fábrica:
+- A TONALIDADE / TOM fica onde começa com 240!
+- O CALIBRE fica onde começa com 90!
+- O LOTE fica onde começa com 10!
+
+Extraia as seguintes informações no formato JSON estrito:
+{
+  "rawCode": "código completo ou concatenado com os identificadores GS1",
+  "gtin": "código GTIN de 14 dígitos",
+  "tom": "tonalidade / tom que começa com 240 (ex: 4)",
+  "calibre": "calibre que começa com 90 (ex: 8)",
+  "lote": "número do lote que começa com 10 (ex: 00000049)",
+  "quantidade": 72,
+  "areaM2": 2.19,
+  "areaRaw": "000219",
+  "sscc": "código SSCC de 18 dígitos",
+  "dataProducao": "data no formato AAAA-MM-DD se encontrada",
+  "resumo": "Breve resumo legível dos dados identificados"
+}
+
+Se encontrar qualquer uma dessas informações (seja no código de barras 2D ou no texto legível da etiqueta/tela), retorne APENAS o JSON puro sem formatação markdown ou explicações.`;
+
+      let textResult = '';
+      const modelsToTry = ['gemini-3.8-flash', 'gemini-flash-latest'];
+
+      for (const modelName of modelsToTry) {
+        try {
+          const response = await ai.models.generateContent({
+            model: modelName,
+            contents: [
+              {
+                role: 'user',
+                parts: [
+                  {
+                    inlineData: {
+                      mimeType: mimeType || 'image/jpeg',
+                      data: cleanBase64,
+                    },
+                  },
+                  { text: prompt },
+                ],
+              },
+            ],
+            config: {
+              responseMimeType: 'application/json',
+            },
+          });
+          textResult = response.text?.trim() || '';
+          if (textResult) break;
+        } catch (mErr: any) {
+          console.warn(`Tentativa com modelo ${modelName} falhou:`, mErr?.message);
+        }
+      }
+
+      if (!textResult) {
+        return res.status(422).json({ error: 'Não foi possível detectar dados GS1 ou código Data Matrix na imagem.' });
+      }
+
+      try {
+        const jsonMatch = textResult.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsedData = JSON.parse(jsonMatch[0]);
+          return res.json({ success: true, data: parsedData });
+        }
+      } catch (parseErr) {
+        console.warn('Erro ao converter resposta Gemini para JSON:', parseErr, textResult);
+      }
+
+      return res.json({ success: true, data: { rawCode: textResult, resumo: textResult } });
+    } catch (err: any) {
+      console.error('Erro na extração visual de DataMatrix:', err);
+      res.status(500).json({ error: err.message || 'Falha ao processar a imagem do código.' });
+    }
+  });
+
   // Authentication: Login
   app.post('/api/login', async (req, res) => {
     if (!process.env.DATABASE_URL) {

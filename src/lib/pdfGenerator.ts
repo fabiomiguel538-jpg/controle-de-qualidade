@@ -14,24 +14,53 @@ export const generatePDF = (report: Report) => {
   doc.text('CONTROLE ESTATÍSTICO DE DEFEITOS VISUAIS', 105, 19, { align: 'center' });
   
   // Header Info
-  doc.setFontSize(10);
+  doc.setFontSize(9.5);
   doc.text(`Data: ${report.date}`, 14, 28);
   doc.text(`Turno: ${report.shift}`, 60, 28);
-  doc.text(`Linha: ${report.line}`, 100, 28);
-  doc.text(`Formato: ${report.format}`, 14, 35);
-  doc.text(`Referência: ${report.reference}`, 100, 35);
+  doc.text(`Linha: ${report.line}`, 105, 28);
+  if (report.leaderName) {
+    doc.text(`Líder: ${report.leaderName}`, 150, 28);
+  }
 
-  let nextY = 45;
-  if (report.productChange?.newReference) {
+  const hasProductChange = Boolean(
+    report.productChange?.newReference || 
+    report.productChange?.newGtin || 
+    report.productChange?.gs1Info?.gtin || 
+    report.productChange?.hasChange
+  );
+  const gtinAntes = report.gtin || report.gs1Info?.gtin || '-';
+  const refAntes = report.reference || '-';
+  const formatoAntes = report.format || '-';
+
+  if (hasProductChange) {
+    doc.text(`Formato: ${formatoAntes}`, 14, 34);
+    doc.text(`Ref. (Antes da Troca): ${refAntes}`, 60, 34);
+    doc.text(`GTIN (Antes da Troca): ${gtinAntes}`, 125, 34);
+  } else {
+    doc.text(`Formato: ${formatoAntes}`, 14, 34);
+    doc.text(`Referência: ${refAntes}`, 60, 34);
+    doc.text(`GTIN: ${gtinAntes}`, 125, 34);
+  }
+
+  let nextY = 44;
+  if (hasProductChange && report.productChange) {
     const pc = report.productChange;
-    let changeText = `TROCA: Ref. Nova ${pc.newReference}`;
+    const newGtin = pc.newGtin || pc.gs1Info?.gtin;
+    const newRefText = pc.newReference ? pc.newReference : (newGtin ? '(A definir)' : '-');
+    let changeText = `TROCA: Ref. Nova: ${newRefText}`;
+    if (newGtin) changeText += ` | GTIN Novo: ${newGtin}`;
     if (pc.time) changeText += ` às ${pc.time}`;
-    if (pc.newFormat) changeText += ` (Formato: ${pc.newFormat})`;
-    doc.setFontSize(9);
+    if (pc.newFormat) changeText += ` (${pc.newFormat})`;
+    if (pc.newLot) changeText += ` | Lote: ${pc.newLot}`;
+    if (pc.newShade) changeText += ` | Tom: ${pc.newShade}`;
+    if (pc.newCalibre) changeText += ` | Cal: ${pc.newCalibre}`;
+
+    doc.setFontSize(8.5);
     doc.setTextColor(190, 75, 0);
-    doc.text(changeText, 14, 41);
+    const splitChange = doc.splitTextToSize(changeText, 182);
+    doc.text(splitChange, 14, 40);
     doc.setTextColor(0, 0, 0);
-    nextY = 49;
+    nextY = 40 + (splitChange.length * 4.5) + 3;
   }
 
   let sectionIndex = 1;

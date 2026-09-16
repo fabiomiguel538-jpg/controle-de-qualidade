@@ -3,11 +3,14 @@ import { Link, useSearchParams } from 'react-router-dom';
 import clsx from 'clsx';
 import { useReportStore, getLocalDateString } from '../store/reportStore';
 import { useAuthStore } from '../store/authStore';
-import { ChevronLeft, Search, FileText, CheckCircle, Clock, FileDown, BarChart2, Edit3, Eye, User as UserIcon, ShieldCheck, Trash2, Calendar, Check, X, RotateCcw } from 'lucide-react';
+import { ChevronLeft, Search, FileText, CheckCircle, Clock, FileDown, BarChart2, Edit3, Eye, User as UserIcon, ShieldCheck, Trash2, Calendar, Check, X, RotateCcw, ScanLine } from 'lucide-react';
 import { generatePDF } from '../lib/pdfGenerator';
 import { canUserAccessReport } from '../lib/permissions';
 import VivaLogo from '../components/VivaLogo';
 import CloudSyncBadge from '../components/CloudSyncBadge';
+import { DataMatrixScannerModal } from '../components/DataMatrixScannerModal';
+import { ParsedDataMatrix } from '../lib/dataMatrixParser';
+import { Report } from '../store/reportStore';
 
 export function formatReportDate(dateStr: string): string {
   if (!dateStr) return '--/--/----';
@@ -46,6 +49,62 @@ export default function ReportList() {
   const [tempDate, setTempDate] = useState<string>('');
   const [isSavingDate, setIsSavingDate] = useState<boolean>(false);
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
+
+  // Estado para leitor de Data Matrix 2D ao lado da data nos relatórios em andamento
+  const [scanningReport, setScanningReport] = useState<Report | null>(null);
+
+  const handleDataMatrixScannedInList = async (parsed: ParsedDataMatrix, options?: any) => {
+    if (!scanningReport) return;
+    const updates: Partial<Report> = {};
+
+    const applyDate = options?.applyDate ?? true;
+    const applyLot = options?.applyLot ?? true;
+    const applyShade = options?.applyShade ?? true;
+    const applyCalibre = options?.applyCalibre ?? true;
+
+    if (applyDate && parsed.detectedDate) {
+      updates.date = parsed.detectedDate;
+    }
+    if (parsed.detectedShift && !scanningReport.shift) {
+      updates.shift = parsed.detectedShift;
+    }
+    if (parsed.detectedLine && !scanningReport.line) {
+      updates.line = parsed.detectedLine;
+    }
+    if (applyLot && parsed.lot) {
+      updates.lot = parsed.lot;
+    }
+    if (applyShade && parsed.shade) {
+      updates.shade = parsed.shade;
+    }
+    if (applyCalibre && parsed.calibre) {
+      updates.caliber = parsed.calibre;
+    }
+
+    updates.gs1Info = {
+      gtin: parsed.gtin,
+      calibre: parsed.calibre,
+      tom: parsed.shade,
+      lote: parsed.lot,
+      quantidade: parsed.count,
+      areaM2: parsed.areaM2,
+      areaRaw: parsed.areaRaw,
+      sscc: parsed.sscc,
+      extensionDigit: parsed.ssccExtension || '0',
+      productionDate: parsed.productionDate,
+      rawCode: parsed.rawText,
+      formattedSummary: parsed.summary,
+      scannedAt: new Date().toISOString(),
+    };
+
+    await updateReport(scanningReport.id, updates);
+    const feedbackDetails = [];
+    if (parsed.lot) feedbackDetails.push(`Lote: ${parsed.lot}`);
+    if (parsed.shade) feedbackDetails.push(`Tom: ${parsed.shade}`);
+    if (parsed.calibre) feedbackDetails.push(`Calibre: ${parsed.calibre}`);
+    setFeedbackMsg(`Dados GS1 aplicados! ${feedbackDetails.length > 0 ? `(${feedbackDetails.join(', ')})` : ''}`);
+    setTimeout(() => setFeedbackMsg(null), 5000);
+  };
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.preventDefault();
@@ -241,8 +300,49 @@ export default function ReportList() {
                           <span>Editar Data</span>
                         </button>
                       )}
+
+                      {/* Botão de Leitor Data Matrix 2D ao lado da data nos relatórios em andamento */}
+                      {report.status === 'EM_ANDAMENTO' && !isAdmin && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setScanningReport(report);
+                          }}
+                          className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded-md border border-emerald-200 transition-all active:scale-95 cursor-pointer shadow-2xs"
+                          title="Escanear código Data Matrix 2D da peça/etiqueta para definir a data deste relatório"
+                        >
+                          <ScanLine size={12} className="text-emerald-600" />
+                          <span>Data Matrix 2D</span>
+                        </button>
+                      )}
                     </div>
                     <p className="text-sm text-neutral-500">Turno {report.shift} • Linha {report.line || '-'}</p>
+                    {report.gs1Info && (
+                      <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                        {report.gs1Info.lote && (
+                          <span className="text-[10px] font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded">
+                            Lote: {report.gs1Info.lote}
+                          </span>
+                        )}
+                        {report.gs1Info.tom && (
+                          <span className="text-[10px] font-mono font-bold bg-neutral-100 text-neutral-700 border border-neutral-200 px-1.5 py-0.5 rounded">
+                            Tom: {report.gs1Info.tom}
+                          </span>
+                        )}
+                        {report.gs1Info.calibre && (
+                          <span className="text-[10px] font-mono font-bold bg-neutral-100 text-neutral-700 border border-neutral-200 px-1.5 py-0.5 rounded">
+                            Cal: {report.gs1Info.calibre}
+                          </span>
+                        )}
+                        {report.gs1Info.areaM2 && (
+                          <span className="text-[10px] font-mono font-bold bg-teal-50 text-teal-800 border border-teal-200 px-1.5 py-0.5 rounded">
+                            {report.gs1Info.areaM2} m²
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-1.5 flex-wrap justify-end">
                     {report.status === 'FINALIZADO' ? (
@@ -353,6 +453,15 @@ export default function ReportList() {
                       </button>
                       <button
                         type="button"
+                        onClick={() => setScanningReport(report)}
+                        className="flex items-center gap-1 py-1.5 px-2.5 text-xs font-bold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 rounded-lg transition-colors cursor-pointer"
+                        title="Ler código Data Matrix 2D para esta data"
+                      >
+                        <ScanLine size={13} className="text-emerald-700" />
+                        <span>Ler Data Matrix 2D</span>
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => setEditingDateId(null)}
                         className="flex items-center gap-1 py-1.5 px-2.5 text-xs font-semibold text-neutral-600 hover:bg-neutral-200 rounded-lg transition-colors cursor-pointer"
                       >
@@ -438,6 +547,19 @@ export default function ReportList() {
           )}
         </div>
       </div>
+
+      {/* Modal do Leitor Data Matrix 2D */}
+      <DataMatrixScannerModal
+        isOpen={Boolean(scanningReport)}
+        onClose={() => setScanningReport(null)}
+        onScanComplete={handleDataMatrixScannedInList}
+        currentDate={scanningReport?.date}
+        reportContext={{
+          shift: scanningReport?.shift,
+          line: scanningReport?.line,
+          reportId: scanningReport?.id,
+        }}
+      />
     </div>
   );
 }

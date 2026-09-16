@@ -79,6 +79,7 @@ export const useReportStore = create<ReportState>()(
           leaderName: info.leaderName || '',
           format: info.format || '',
           reference: info.reference || '',
+          gtin: info.gtin || '',
           piecesToMeasure: info.piecesToMeasure ?? 7,
           status: 'EM_ANDAMENTO',
           thickness: [],
@@ -93,6 +94,7 @@ export const useReportStore = create<ReportState>()(
             hasChange: false,
             time: '',
             newReference: '',
+            newGtin: '',
             newFormat: '',
             observation: ''
           },

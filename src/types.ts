@@ -41,8 +41,13 @@ export interface ProductChangeInfo {
   hasChange?: boolean;
   time?: string;
   newReference: string;
+  newGtin?: string;
   newFormat?: string;
+  newLot?: string;
+  newShade?: string;
+  newCalibre?: string;
   observation?: string;
+  gs1Info?: GS1DataMatrixInfo;
 }
 
 export interface ProductionLosses {
@@ -55,6 +60,22 @@ export interface ProductionLosses {
   entries?: ProductionLossEntry[]; // Lançamentos horários opcionais
 }
 
+export interface GS1DataMatrixInfo {
+  gtin?: string;               // AI 02 / 01 (GTIN de itens contidos / produto)
+  tom?: string;                // AI 240 (Tom / Tonalidade - onde começa com 240)
+  calibre?: string;            // AI 90 (Calibre dimensional - onde começa com 90)
+  lote?: string;               // AI 10 (Lote do produto - onde começa com 10)
+  quantidade?: string | number;// AI 37 (Quantidade de caixas / peças)
+  areaM2?: string | number;    // AI 3142 (Área em metros quadrados, ex: 2.19)
+  areaRaw?: string;            // AI 3142 bruto (000219)
+  sscc?: string;               // AI 00 (SSCC / Código Serial da Unidade Logística)
+  extensionDigit?: string;     // AI 00 (Dígito de extensão)
+  productionDate?: string;     // AI 11 (Data de produção YYMMDD)
+  rawCode?: string;
+  formattedSummary?: string;
+  scannedAt?: string;
+}
+
 export interface Report {
   id: string;
   date: string;
@@ -63,6 +84,7 @@ export interface Report {
   leaderName: string;
   format: string;
   reference: string;
+  gtin?: string;
   piecesToMeasure?: number;
   productChange?: ProductChangeInfo;
   status: ReportStatus;
@@ -97,6 +119,11 @@ export interface Report {
   productionLosses?: ProductionLosses;
   observations: { time: string; description: string }[];
   changes: { time: string; initial: string; final: string; visual: string; observation: string }[];
+  
+  gs1Info?: GS1DataMatrixInfo;
+  lot?: string;
+  caliber?: string;
+  shade?: string;
   
   processInfo: {
     gramatura?: number;

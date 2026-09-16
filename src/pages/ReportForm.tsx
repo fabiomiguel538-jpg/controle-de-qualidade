@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link, useSearchParams } from 'react-router-dom';
 import { useReportStore, Report, getLocalDateString } from '../store/reportStore';
 import { useAuthStore } from '../store/authStore';
-import { ChevronLeft, Plus, Trash2, CheckCircle, Save, FileDown, ArrowRight, Clock, UploadCloud, Check, RefreshCw, Sparkles, Pencil, Edit3, RotateCcw, AlertCircle, Eraser, ShieldAlert, Layers, LayoutGrid, ChevronRight, Package, PackageX, Truck, Boxes, Calendar, Eye, Copy, ArrowDown, Tag, AlertTriangle, Sliders } from 'lucide-react';
+import { ChevronLeft, Plus, Trash2, CheckCircle, Save, FileDown, ArrowRight, Clock, UploadCloud, Check, RefreshCw, Sparkles, Pencil, Edit3, RotateCcw, AlertCircle, Eraser, ShieldAlert, Layers, LayoutGrid, ChevronRight, Package, PackageX, Truck, Boxes, Calendar, Eye, Copy, ArrowDown, Tag, AlertTriangle, Sliders, ScanLine } from 'lucide-react';
 import { DEFECTS_LIST, SHIFT_HOURS } from '../lib/constants';
 import { generatePDF } from '../lib/pdfGenerator';
 import { canUserAccessReport } from '../lib/permissions';
@@ -12,6 +12,8 @@ import clsx from 'clsx';
 import CloudSyncBadge from '../components/CloudSyncBadge';
 import TimeInput from '../components/TimeInput';
 import MeasurementInput from '../components/MeasurementInput';
+import { DataMatrixScannerModal } from '../components/DataMatrixScannerModal';
+import { ParsedDataMatrix } from '../lib/dataMatrixParser';
 
 export default function ReportForm() {
   const navigate = useNavigate();
@@ -53,6 +55,161 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
   const [customCCMax, setCustomCCMax] = useState<string>('');
   const [customCLMin, setCustomCLMin] = useState<string>('');
   const [customCLMax, setCustomCLMax] = useState<string>('');
+  const [isDataMatrixOpen, setIsDataMatrixOpen] = useState<boolean>(false);
+  const [isTrocaDataMatrixOpen, setIsTrocaDataMatrixOpen] = useState<boolean>(false);
+
+  const handleDataMatrixScanned = (
+    parsed: ParsedDataMatrix, 
+    options?: {
+      applyDate?: boolean;
+      applyLot?: boolean;
+      applyShade?: boolean;
+      applyCalibre?: boolean;
+      applyMetrics?: boolean;
+    }
+  ) => {
+    if (!report) return;
+    const updates: Partial<Report> = {};
+
+    const applyDate = options?.applyDate ?? true;
+    const applyLot = options?.applyLot ?? true;
+    const applyShade = options?.applyShade ?? true;
+    const applyCalibre = options?.applyCalibre ?? true;
+    const applyMetrics = options?.applyMetrics ?? true;
+
+    if (applyDate && parsed.detectedDate) {
+      updates.date = parsed.detectedDate;
+    }
+    if (parsed.detectedShift && !report.shift) {
+      updates.shift = parsed.detectedShift;
+    }
+    if (parsed.detectedLine && !report.line) {
+      updates.line = parsed.detectedLine;
+    }
+    if (parsed.detectedModel && !report.reference) {
+      updates.reference = parsed.detectedModel;
+    }
+    if (parsed.detectedFormat && !report.format) {
+      updates.format = parsed.detectedFormat;
+    }
+
+    // Campos específicos GS1 DataMatrix (Scandit)
+    if (applyLot && parsed.lot) {
+      updates.lot = parsed.lot;
+      if (report.visualChecks && report.visualChecks.length > 0) {
+        updates.visualChecks = report.visualChecks.map(vc => ({
+          ...vc,
+          batch: vc.batch ? vc.batch : (parsed.lot || ''),
+        }));
+      }
+    }
+
+    if (applyShade && parsed.shade) {
+      updates.shade = parsed.shade;
+      if (report.visualChecks && report.visualChecks.length > 0) {
+        updates.visualChecks = (updates.visualChecks || report.visualChecks).map(vc => ({
+          ...vc,
+          tone: vc.tone ? vc.tone : (parsed.shade || ''),
+        }));
+      }
+    }
+
+    if (applyCalibre && parsed.calibre) {
+      updates.caliber = parsed.calibre;
+    }
+
+    if (parsed.gtin) {
+      updates.gtin = parsed.gtin;
+    }
+
+    // Salva metadados completos GS1
+    updates.gs1Info = {
+      gtin: parsed.gtin,
+      calibre: parsed.calibre,
+      tom: parsed.shade,
+      lote: parsed.lot,
+      quantidade: parsed.count,
+      areaM2: parsed.areaM2,
+      areaRaw: parsed.areaRaw,
+      sscc: parsed.sscc,
+      extensionDigit: parsed.ssccExtension || '0',
+      productionDate: parsed.productionDate,
+      rawCode: parsed.rawText,
+      formattedSummary: parsed.summary,
+      scannedAt: new Date().toISOString(),
+    };
+
+    update(updates);
+
+    const feedbackDetails = [];
+    if (parsed.lot) feedbackDetails.push(`Lote: ${parsed.lot}`);
+    if (parsed.shade) feedbackDetails.push(`Tom: ${parsed.shade}`);
+    if (parsed.calibre) feedbackDetails.push(`Calibre: ${parsed.calibre}`);
+    if (parsed.areaM2) feedbackDetails.push(`Área: ${parsed.areaM2}m²`);
+    if (parsed.count) feedbackDetails.push(`Qtd: ${parsed.count} cx`);
+
+    setSyncFeedback(
+      `Dados GS1 DataMatrix aplicados! ${feedbackDetails.length > 0 ? `(${feedbackDetails.join(', ')})` : ''}`
+    );
+    setTimeout(() => setSyncFeedback(null), 5000);
+  };
+
+  const handleTrocaDataMatrixScanned = (parsed: ParsedDataMatrix) => {
+    if (!report) return;
+
+    const nowTime = new Date().toTimeString().substring(0, 5);
+    const prevChange = report.productChange || { newReference: '' };
+
+    // Deixa o espaço da Referência do Produto Novo LIVRE para o operador digitar
+    const newRef = prevChange.newReference || '';
+    const newGtin = parsed.gtin || prevChange.newGtin || '';
+    const newFormat = parsed.detectedFormat || prevChange.newFormat || '';
+    const newLot = parsed.lot || prevChange.newLot || '';
+    const newShade = parsed.shade || prevChange.newShade || '';
+    const newCalibre = parsed.calibre || prevChange.newCalibre || '';
+
+    const newGs1Info = {
+      gtin: parsed.gtin,
+      calibre: parsed.calibre,
+      tom: parsed.shade,
+      lote: parsed.lot,
+      quantidade: parsed.count,
+      areaM2: parsed.areaM2,
+      areaRaw: parsed.areaRaw,
+      sscc: parsed.sscc,
+      extensionDigit: parsed.ssccExtension || '0',
+      productionDate: parsed.productionDate,
+      rawCode: parsed.rawText,
+      formattedSummary: parsed.summary,
+      scannedAt: new Date().toISOString(),
+    };
+
+    update({
+      productChange: {
+        ...prevChange,
+        hasChange: true,
+        newReference: newRef,
+        newGtin: newGtin,
+        time: prevChange.time || nowTime,
+        newFormat: newFormat || prevChange.newFormat,
+        newLot: newLot || prevChange.newLot,
+        newShade: newShade || prevChange.newShade,
+        newCalibre: newCalibre || prevChange.newCalibre,
+        gs1Info: newGs1Info,
+      }
+    });
+
+    const parts = [];
+    if (parsed.gtin) parts.push(`GTIN: ${parsed.gtin}`);
+    if (parsed.lot) parts.push(`Lote: ${parsed.lot}`);
+    if (parsed.shade) parts.push(`Tom: ${parsed.shade}`);
+    if (parsed.calibre) parts.push(`Calibre: ${parsed.calibre}`);
+
+    setSyncFeedback(
+      `Dados do produto novo escaneados! GTIN preenchido. Digite a nova referência. ${parts.length > 0 ? `(${parts.join(' • ')})` : ''}`
+    );
+    setTimeout(() => setSyncFeedback(null), 5000);
+  };
 
   useEffect(() => {
     if (id) {
@@ -3235,13 +3392,26 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
                       </div>
                     )}
                   </div>
-                  <input 
-                    type="date" 
-                    value={report.date?.split('T')[0] || ''} 
-                    onChange={e => update({ date: e.target.value })}
-                    disabled={isLocked}
-                    className="w-full py-1.5 px-2 bg-neutral-50 border border-neutral-200 rounded-lg text-xs font-medium focus:ring-1 focus:ring-orange-500 outline-none"
-                  />
+                  <div className="flex items-center gap-1.5">
+                    <input 
+                      type="date" 
+                      value={report.date?.split('T')[0] || ''} 
+                      onChange={e => update({ date: e.target.value })}
+                      disabled={isLocked}
+                      className="flex-1 py-1.5 px-2 bg-neutral-50 border border-neutral-200 rounded-lg text-xs font-medium focus:ring-1 focus:ring-orange-500 outline-none"
+                    />
+                    {!isLocked && (
+                      <button
+                        type="button"
+                        onClick={() => setIsDataMatrixOpen(true)}
+                        className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-lg text-xs font-bold transition-all shadow-xs whitespace-nowrap cursor-pointer"
+                        title="Ler código Data Matrix 2D da peça cerâmica ou etiqueta para preencher a data"
+                      >
+                        <ScanLine size={13} className="text-emerald-200" />
+                        <span>Data Matrix 2D</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div>
@@ -3340,8 +3510,10 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
                   </div>
                 </div>
 
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-semibold text-neutral-700 mb-0.5">Referência</label>
+                <div className="sm:col-span-1">
+                  <label className="block text-xs font-semibold text-neutral-700 mb-0.5">
+                    Referência {report.productChange?.newReference ? '(Antes da Troca)' : ''}
+                  </label>
                   <input 
                     type="text" 
                     value={report.reference} 
@@ -3351,6 +3523,128 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
                     placeholder="Código do produto atual"
                   />
                 </div>
+
+                <div className="sm:col-span-1">
+                  <label className="block text-xs font-semibold text-neutral-700 mb-0.5 flex items-center justify-between">
+                    <span>GTIN {report.productChange?.newReference ? '(Antes da Troca)' : ''}</span>
+                    {(report.gtin || report.gs1Info?.gtin) && (
+                      <span className="text-[10px] text-emerald-600 font-bold">GS1 2D</span>
+                    )}
+                  </label>
+                  <input 
+                    type="text" 
+                    value={report.gtin || report.gs1Info?.gtin || ''} 
+                    onChange={e => {
+                      const val = e.target.value;
+                      update({ 
+                        gtin: val,
+                        gs1Info: report.gs1Info ? { ...report.gs1Info, gtin: val } : (val ? { gtin: val } : undefined)
+                      });
+                    }}
+                    disabled={isLocked}
+                    className="w-full py-1.5 px-2 bg-neutral-50 border border-neutral-200 rounded-lg text-xs font-mono font-medium focus:ring-1 focus:ring-orange-500 outline-none"
+                    placeholder="GTIN (AI 01/02)"
+                  />
+                </div>
+
+                {/* SEÇÃO: INFORMAÇÕES DO CÓDIGO GS1 DATAMATRIX (SCANDIT / ETIQUETA PALETE) */}
+                {report.gs1Info && (
+                  <div className="sm:col-span-2 bg-gradient-to-r from-emerald-50/90 via-teal-50/40 to-white border border-emerald-300 rounded-xl p-3 shadow-xs animate-in fade-in duration-200">
+                    <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-emerald-200">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-md bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                          <ScanLine size={13} />
+                        </div>
+                        <div>
+                          <span className="font-bold text-xs text-emerald-950 uppercase tracking-wide">
+                            Etiqueta GS1 DataMatrix (Palete / Peça)
+                          </span>
+                          <span className="text-[11px] text-emerald-700 ml-1.5 font-medium">
+                            Lido via Leitor 2D
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setIsDataMatrixOpen(true)}
+                          className="text-[11px] font-bold text-emerald-700 hover:text-emerald-900 underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <RefreshCw size={11} />
+                          Escanear Outro Código
+                        </button>
+                        {!isLocked && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm('Deseja apagar os dados da etiqueta GS1 DataMatrix deste relatório?')) {
+                                update({ gs1Info: undefined });
+                                setSyncFeedback('Etiqueta GS1 apagada com sucesso!');
+                                setTimeout(() => setSyncFeedback(null), 3000);
+                              }
+                            }}
+                            className="text-[11px] font-bold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 px-2 py-1 rounded-md flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+                            title="Apagar dados da etiqueta GS1 DataMatrix"
+                          >
+                            <Trash2 size={12} />
+                            Apagar Etiqueta
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2 pt-2.5 text-xs">
+                      <div className="bg-white p-2 rounded-lg border border-emerald-200/80 shadow-2xs">
+                        <span className="text-[10px] font-bold text-neutral-500 uppercase block mb-0.5">02. GTIN</span>
+                        <span className="font-mono font-bold text-neutral-800 text-[11px] truncate block" title={report.gs1Info.gtin}>
+                          {report.gs1Info.gtin || '-'}
+                        </span>
+                      </div>
+
+                      <div className="bg-white p-2 rounded-lg border border-emerald-200/80 shadow-2xs">
+                        <span className="text-[10px] font-bold text-emerald-700 uppercase block mb-0.5">10. Lote</span>
+                        <span className="font-mono font-black text-emerald-900 text-xs truncate block">
+                          {report.gs1Info.lote || report.lot || '-'}
+                        </span>
+                      </div>
+
+                      <div className="bg-white p-2 rounded-lg border border-emerald-200/80 shadow-2xs">
+                        <span className="text-[10px] font-bold text-neutral-500 uppercase block mb-0.5">240. Tom</span>
+                        <span className="font-mono font-bold text-neutral-800 text-xs truncate block">
+                          {report.gs1Info.tom || report.shade || '-'}
+                        </span>
+                      </div>
+
+                      <div className="bg-white p-2 rounded-lg border border-emerald-200/80 shadow-2xs">
+                        <span className="text-[10px] font-bold text-neutral-500 uppercase block mb-0.5">90. Calibre</span>
+                        <span className="font-mono font-bold text-neutral-800 text-xs truncate block">
+                          {report.gs1Info.calibre || report.caliber || '-'}
+                        </span>
+                      </div>
+
+                      <div className="bg-white p-2 rounded-lg border border-emerald-200/80 shadow-2xs">
+                        <span className="text-[10px] font-bold text-neutral-500 uppercase block mb-0.5">37. Qtd (cx)</span>
+                        <span className="font-mono font-bold text-neutral-800 text-xs truncate block">
+                          {report.gs1Info.quantidade ? `${report.gs1Info.quantidade} cx` : '-'}
+                        </span>
+                      </div>
+
+                      <div className="bg-white p-2 rounded-lg border border-emerald-200/80 shadow-2xs">
+                        <span className="text-[10px] font-bold text-neutral-500 uppercase block mb-0.5">3142. Área m²</span>
+                        <span className="font-mono font-bold text-neutral-800 text-xs truncate block">
+                          {report.gs1Info.areaM2 ? `${report.gs1Info.areaM2} m²` : '-'}
+                        </span>
+                      </div>
+
+                      <div className="bg-white p-2 rounded-lg border border-emerald-200/80 shadow-2xs col-span-2 sm:col-span-2 md:col-span-1">
+                        <span className="text-[10px] font-bold text-neutral-500 uppercase block mb-0.5">00. SSCC</span>
+                        <span className="font-mono font-bold text-neutral-800 text-[11px] truncate block" title={report.gs1Info.sscc}>
+                          {report.gs1Info.sscc || '-'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* SEÇÃO: TROCA COM ESPAÇO PARA REFERÊNCIA DO PRODUTO NOVO */}
                 <div className="sm:col-span-2 mt-1 pt-3 border-t border-neutral-200">
@@ -3365,21 +3659,38 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
                           <span className="text-[11px] text-amber-800 ml-1.5 font-medium">Troca de produto no turno</span>
                         </div>
                       </div>
-                      {report.productChange?.newReference ? (
-                        <span className="text-[10px] font-bold bg-amber-200 text-amber-900 border border-amber-400 px-2 py-0.5 rounded-full flex items-center gap-1">
-                          <Check size={11} className="stroke-[3]" /> Troca Informada
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-neutral-400 italic">
-                          (Preencha se houver troca de produto durante o turno)
-                        </span>
-                      )}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {!isLocked && (
+                          <button
+                            type="button"
+                            onClick={() => setIsTrocaDataMatrixOpen(true)}
+                            className="flex items-center gap-1.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-2xs active:scale-95 transition-all cursor-pointer"
+                            title="Escanear código GS1 DataMatrix da etiqueta do produto novo da troca"
+                          >
+                            <ScanLine size={13} className="stroke-[2.5]" />
+                            <span>Escanear Produto Novo</span>
+                          </button>
+                        )}
+                        {report.productChange?.newReference || report.productChange?.newGtin ? (
+                          <span className="text-[10px] font-bold bg-amber-200 text-amber-900 border border-amber-400 px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <Check size={11} className="stroke-[3]" /> Troca Informada
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-neutral-400 italic">
+                            (Preencha se houver troca de produto durante o turno)
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                      {/* Referência do Produto Novo - 100% Livre para o usuário digitar */}
                       <div className="sm:col-span-6">
-                        <label className="block text-xs font-bold text-neutral-800 mb-1">
-                          Referência do Produto Novo: *
+                        <label className="block text-xs font-bold text-neutral-800 mb-1 flex items-center justify-between">
+                          <span>Referência do Produto Novo: *</span>
+                          <span className="text-[10px] font-normal text-amber-800 bg-amber-100/80 px-1.5 py-0.5 rounded">
+                            Livre para digitação
+                          </span>
                         </label>
                         <input 
                           type="text" 
@@ -3387,7 +3698,7 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
                           onChange={e => update({ 
                             productChange: {
                               ...(report.productChange || {}),
-                              hasChange: Boolean(e.target.value.trim()),
+                              hasChange: Boolean(e.target.value.trim() || report.productChange?.newGtin),
                               newReference: e.target.value
                             } 
                           })}
@@ -3395,6 +3706,45 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
                           className="w-full py-2 px-3 bg-white border-2 border-amber-400 rounded-lg text-xs font-bold text-neutral-900 placeholder:text-neutral-400 placeholder:font-normal focus:border-amber-600 focus:ring-2 focus:ring-amber-200 outline-none shadow-xs"
                           placeholder="Digite a referência do produto novo..."
                         />
+                      </div>
+
+                      {/* Espaço Exclusivo para o GTIN do Produto Novo com Scanner */}
+                      <div className="sm:col-span-6">
+                        <label className="block text-xs font-bold text-neutral-800 mb-1 flex items-center justify-between">
+                          <span>GTIN do Produto Novo (01/02):</span>
+                          {(report.productChange?.newGtin || report.productChange?.gs1Info?.gtin) && (
+                            <span className="text-[10px] text-emerald-800 bg-emerald-100 font-bold px-1.5 py-0.5 rounded border border-emerald-300 flex items-center gap-1">
+                              <Check size={10} className="stroke-[3]" /> GS1 2D
+                            </span>
+                          )}
+                        </label>
+                        <div className="flex gap-1.5">
+                          <input 
+                            type="text" 
+                            value={report.productChange?.newGtin || report.productChange?.gs1Info?.gtin || ''} 
+                            onChange={e => update({ 
+                              productChange: {
+                                ...(report.productChange || { newReference: '' }),
+                                hasChange: Boolean(e.target.value.trim() || report.productChange?.newReference),
+                                newGtin: e.target.value
+                              } 
+                            })}
+                            disabled={isLocked}
+                            className="flex-1 py-2 px-3 bg-white border-2 border-amber-300 focus:border-amber-500 rounded-lg text-xs font-mono font-bold text-neutral-800 focus:ring-2 focus:ring-amber-200 outline-none shadow-xs placeholder:text-neutral-400 placeholder:font-sans placeholder:font-normal"
+                            placeholder="Escaneie a etiqueta ou digite o GTIN..."
+                          />
+                          {!isLocked && (
+                            <button
+                              type="button"
+                              onClick={() => setIsTrocaDataMatrixOpen(true)}
+                              className="px-3 py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-bold rounded-lg flex items-center gap-1.5 text-xs shadow-2xs active:scale-95 transition-all cursor-pointer shrink-0"
+                              title="Escanear código DataMatrix da etiqueta da troca"
+                            >
+                              <ScanLine size={14} className="stroke-[2.5]" />
+                              <span>Escanear</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       <div className="sm:col-span-3">
@@ -3435,6 +3785,63 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
                         />
                       </div>
 
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs font-semibold text-neutral-700 mb-1">
+                          Lote Novo (10)
+                        </label>
+                        <input 
+                          type="text" 
+                          value={report.productChange?.newLot || ''} 
+                          onChange={e => update({ 
+                            productChange: {
+                              ...(report.productChange || { newReference: '' }),
+                              newLot: e.target.value
+                            } 
+                          })}
+                          disabled={isLocked}
+                          className="w-full py-1.5 px-2 bg-white border border-neutral-300 rounded-lg text-xs font-mono font-bold text-neutral-800 focus:border-amber-500 outline-none"
+                          placeholder="Lote da troca"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs font-semibold text-neutral-700 mb-1">
+                          Tom Novo (240)
+                        </label>
+                        <input 
+                          type="text" 
+                          value={report.productChange?.newShade || ''} 
+                          onChange={e => update({ 
+                            productChange: {
+                              ...(report.productChange || { newReference: '' }),
+                              newShade: e.target.value
+                            } 
+                          })}
+                          disabled={isLocked}
+                          className="w-full py-1.5 px-2 bg-white border border-neutral-300 rounded-lg text-xs font-mono font-bold text-neutral-800 focus:border-amber-500 outline-none"
+                          placeholder="Tom da troca"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs font-semibold text-neutral-700 mb-1">
+                          Calibre Novo (90)
+                        </label>
+                        <input 
+                          type="text" 
+                          value={report.productChange?.newCalibre || ''} 
+                          onChange={e => update({ 
+                            productChange: {
+                              ...(report.productChange || { newReference: '' }),
+                              newCalibre: e.target.value
+                            } 
+                          })}
+                          disabled={isLocked}
+                          className="w-full py-1.5 px-2 bg-white border border-neutral-300 rounded-lg text-xs font-mono font-bold text-neutral-800 focus:border-amber-500 outline-none"
+                          placeholder="Calibre da troca"
+                        />
+                      </div>
+
                       <div className="sm:col-span-12">
                         <label className="block text-[11px] font-semibold text-neutral-600 mb-0.5">
                           Observação da Troca (Opcional):
@@ -3455,12 +3862,117 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
                       </div>
                     </div>
 
-                    {report.productChange?.newReference && (
+                    {/* Badge da Etiqueta GS1 escaneada na Troca */}
+                    {report.productChange?.gs1Info && (
+                      <div className="mt-3 p-2.5 bg-white/95 rounded-xl border border-amber-300 shadow-2xs">
+                        <div className="flex flex-wrap items-center justify-between gap-1.5 pb-2 border-b border-amber-200">
+                          <div className="flex items-center gap-2">
+                            <div className="w-5 h-5 rounded-md bg-amber-600 text-white flex items-center justify-center shadow-xs">
+                              <ScanLine size={12} />
+                            </div>
+                            <span className="font-bold text-xs text-amber-950 uppercase tracking-wide">
+                              Etiqueta GS1 do Produto Novo (Troca)
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setIsTrocaDataMatrixOpen(true)}
+                              className="text-[11px] font-bold text-amber-800 hover:text-amber-950 underline flex items-center gap-1 cursor-pointer"
+                            >
+                              <RefreshCw size={11} />
+                              Escanear Outro
+                            </button>
+                            {!isLocked && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (window.confirm('Deseja apagar os dados da etiqueta GS1 da troca?')) {
+                                    update({
+                                      productChange: {
+                                        ...report.productChange,
+                                        newReference: report.productChange?.newReference || '',
+                                        gs1Info: undefined
+                                      }
+                                    });
+                                    setSyncFeedback('Etiqueta GS1 da troca apagada!');
+                                    setTimeout(() => setSyncFeedback(null), 3000);
+                                  }
+                                }}
+                                className="text-[11px] font-bold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 px-2 py-0.5 rounded-md flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+                                title="Apagar etiqueta GS1 da troca"
+                              >
+                                <Trash2 size={11} />
+                                Apagar Etiqueta
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2 pt-2 text-xs">
+                          <div className="bg-amber-50/50 p-1.5 rounded-lg border border-amber-200">
+                            <span className="text-[10px] font-bold text-neutral-500 uppercase block">02. GTIN</span>
+                            <span className="font-mono font-bold text-neutral-800 text-[11px] truncate block" title={report.productChange.gs1Info.gtin}>
+                              {report.productChange.gs1Info.gtin || '-'}
+                            </span>
+                          </div>
+                          <div className="bg-amber-50/50 p-1.5 rounded-lg border border-amber-200">
+                            <span className="text-[10px] font-bold text-amber-800 uppercase block">10. Lote</span>
+                            <span className="font-mono font-black text-amber-950 text-xs truncate block">
+                              {report.productChange.gs1Info.lote || report.productChange.newLot || '-'}
+                            </span>
+                          </div>
+                          <div className="bg-amber-50/50 p-1.5 rounded-lg border border-amber-200">
+                            <span className="text-[10px] font-bold text-neutral-500 uppercase block">240. Tom</span>
+                            <span className="font-mono font-bold text-neutral-800 text-xs truncate block">
+                              {report.productChange.gs1Info.tom || report.productChange.newShade || '-'}
+                            </span>
+                          </div>
+                          <div className="bg-amber-50/50 p-1.5 rounded-lg border border-amber-200">
+                            <span className="text-[10px] font-bold text-neutral-500 uppercase block">90. Calibre</span>
+                            <span className="font-mono font-bold text-neutral-800 text-xs truncate block">
+                              {report.productChange.gs1Info.calibre || report.productChange.newCalibre || '-'}
+                            </span>
+                          </div>
+                          <div className="bg-amber-50/50 p-1.5 rounded-lg border border-amber-200">
+                            <span className="text-[10px] font-bold text-neutral-500 uppercase block">37. Qtd</span>
+                            <span className="font-mono font-bold text-neutral-800 text-xs truncate block">
+                              {report.productChange.gs1Info.quantidade ? `${report.productChange.gs1Info.quantidade} cx` : '-'}
+                            </span>
+                          </div>
+                          <div className="bg-amber-50/50 p-1.5 rounded-lg border border-amber-200">
+                            <span className="text-[10px] font-bold text-neutral-500 uppercase block">3142. Área</span>
+                            <span className="font-mono font-bold text-neutral-800 text-xs truncate block">
+                              {report.productChange.gs1Info.areaM2 ? `${report.productChange.gs1Info.areaM2} m²` : '-'}
+                            </span>
+                          </div>
+                          <div className="bg-amber-50/50 p-1.5 rounded-lg border border-amber-200 col-span-2 sm:col-span-2 md:col-span-1">
+                            <span className="text-[10px] font-bold text-neutral-500 uppercase block">00. SSCC</span>
+                            <span className="font-mono font-bold text-neutral-800 text-[11px] truncate block" title={report.productChange.gs1Info.sscc}>
+                              {report.productChange.gs1Info.sscc || '-'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {(report.productChange?.newReference || report.productChange?.newGtin) && (
                       <div className="mt-2.5 pt-2 border-t border-amber-200 flex flex-wrap items-center justify-between gap-1.5 text-xs">
                         <span className="text-amber-950 font-medium">
-                          Produto Novo Registrado: <strong className="font-black text-amber-900">{report.productChange.newReference}</strong>
+                          Produto Novo Registrado:{' '}
+                          {report.productChange.newReference ? (
+                            <strong className="font-black text-amber-900">{report.productChange.newReference}</strong>
+                          ) : (
+                            <span className="text-amber-700 italic font-semibold">(Referência a preencher)</span>
+                          )}
+                          {(report.productChange.newGtin || report.productChange.gs1Info?.gtin) && (
+                            <span className="text-amber-900 font-mono font-bold"> [GTIN: {report.productChange.newGtin || report.productChange.gs1Info?.gtin}]</span>
+                          )}
                           {report.productChange.time && <span className="text-amber-800"> às {report.productChange.time}</span>}
                           {report.productChange.newFormat && <span className="text-neutral-600"> ({report.productChange.newFormat})</span>}
+                          {report.productChange.newLot && <span className="text-emerald-700"> [Lote: {report.productChange.newLot}]</span>}
+                          {report.productChange.newShade && <span className="text-amber-800"> [Tom: {report.productChange.newShade}]</span>}
+                          {report.productChange.newCalibre && <span className="text-neutral-700"> [Cal: {report.productChange.newCalibre}]</span>}
                         </span>
                         {!isLocked && (
                           <button
@@ -3469,12 +3981,17 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
                               productChange: {
                                 hasChange: false,
                                 newReference: '',
+                                newGtin: '',
                                 time: '',
                                 newFormat: '',
-                                observation: ''
+                                newLot: '',
+                                newShade: '',
+                                newCalibre: '',
+                                observation: '',
+                                gs1Info: undefined
                               }
                             })}
-                            className="text-neutral-500 hover:text-red-600 text-[11px] font-semibold underline flex items-center gap-1 active:scale-95"
+                            className="text-neutral-500 hover:text-red-600 text-[11px] font-semibold underline flex items-center gap-1 active:scale-95 cursor-pointer"
                           >
                             <Eraser size={11} /> Limpar Troca
                           </button>
@@ -4501,6 +5018,39 @@ type TabKey = 'info' | 'thickness' | 'integrated' | 'visual' | 'process' | 'weig
         )}
 
       </div>
+
+      {/* Modal do Leitor Data Matrix 2D - Principal */}
+      {report && (
+        <DataMatrixScannerModal
+          isOpen={isDataMatrixOpen}
+          onClose={() => setIsDataMatrixOpen(false)}
+          onScanComplete={handleDataMatrixScanned}
+          currentDate={report.date}
+          reportContext={{
+            shift: report.shift,
+            line: report.line,
+            reportId: report.id,
+          }}
+        />
+      )}
+
+      {/* Modal do Leitor Data Matrix 2D - Troca de Produto */}
+      {report && (
+        <DataMatrixScannerModal
+          isOpen={isTrocaDataMatrixOpen}
+          onClose={() => setIsTrocaDataMatrixOpen(false)}
+          onScanComplete={handleTrocaDataMatrixScanned}
+          currentDate={report.date}
+          title="Leitor Data Matrix - Troca de Produto"
+          subtitle="Aponte para a etiqueta do produto novo da troca (GTIN, Lote 10, Tom 240, Calibre 90)"
+          badgeLabel="Scanner da Troca"
+          reportContext={{
+            shift: report.shift,
+            line: report.line,
+            reportId: report.id,
+          }}
+        />
+      )}
     </div>
   );
 }
